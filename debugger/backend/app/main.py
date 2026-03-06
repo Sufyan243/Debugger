@@ -1,0 +1,40 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.v1.routes.health import router as health_router
+from app.api.v1.routes.execute import router as execute_router
+from app.api.v1.routes.reflect import router as reflect_router
+from app.api.v1.routes.hint import router as hint_router
+from app.api.v1.routes.solution import router as solution_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Run migrations and seed
+    import subprocess
+    subprocess.run(["alembic", "upgrade", "head"], check=True)
+    
+    from app.db.session import AsyncSessionLocal
+    from app.db.seed import run_seed, run_hint_seed
+    async with AsyncSessionLocal() as db:
+        await run_seed(db)
+        await run_hint_seed(db)
+    
+    yield
+
+
+app = FastAPI(title="Cognitive Debugger API", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(health_router, prefix="/api/v1", tags=["health"])
+app.include_router(execute_router, prefix="/api/v1", tags=["execute"])
+app.include_router(reflect_router, prefix="/api/v1", tags=["reflect"])
+app.include_router(hint_router, prefix="/api/v1", tags=["hint"])
+app.include_router(solution_router, prefix="/api/v1", tags=["solution"])

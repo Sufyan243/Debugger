@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: debugger
+      POSTGRES_USER: debugger
+      POSTGRES_PASSWORD: debugger
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  sandbox-puller:
+    image: docker:cli
+    command: docker pull python:3.11-slim
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - sandbox-puller
+    env_file:
+      - .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
