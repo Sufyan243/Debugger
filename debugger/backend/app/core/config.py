@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -9,7 +9,9 @@ class Settings(BaseSettings):
     SANDBOX_CPU_QUOTA: int = 500_000_000
     MAX_CODE_LENGTH: int = 10000
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()

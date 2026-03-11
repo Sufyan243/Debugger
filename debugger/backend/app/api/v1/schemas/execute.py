@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, validator
 from typing import Optional
 from uuid import UUID
 from app.core.config import settings
@@ -10,8 +10,7 @@ class ExecuteRequest(BaseModel):
     session_id: UUID
     prediction: Optional[str] = Field(None, max_length=1000)
     
-    @field_validator("language")
-    @classmethod
+    @validator("language")
     def validate_language(cls, v: str) -> str:
         if v != "python":
             raise ValueError("Only python language is supported")
