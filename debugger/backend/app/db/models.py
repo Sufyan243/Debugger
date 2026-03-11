@@ -84,3 +84,14 @@ class SolutionRequest(Base):
     request_count: Mapped[int] = mapped_column(Integer, default=0)
     solution_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
     last_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class MetacognitiveMetric(Base):
+    __tablename__ = "metacognitive_metrics"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
+    session_id: Mapped[uuid.UUID] = mapped_column(nullable=False, unique=True)
+    accuracy_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    total_predictions: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    correct_predictions: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
