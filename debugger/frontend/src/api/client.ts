@@ -15,11 +15,16 @@ export interface ClassificationData {
   cognitive_skill: string;
 }
 
-export interface HintData {
-  tier: number;
-  tier_name: string;
+export interface ContextualHint {
   hint_text: string;
-  unlocked: boolean;
+  affected_line: number | null;
+  explanation: string;
+}
+
+export interface SolutionData {
+  solution_code: string;
+  explanation: string;
+  changes_needed: string[];
 }
 
 export interface ExecuteData {
@@ -31,8 +36,10 @@ export interface ExecuteData {
   execution_time: number;
   classification: ClassificationData | null;
   reflection_question?: string | null;
-  hints?: HintData[] | null;
-  hint_auto_unlocked?: boolean;
+  contextual_hint?: ContextualHint | null;
+  solution?: SolutionData | null;
+  prediction_match?: boolean | null;
+  metacognitive_accuracy?: number | null;
 }
 
 export interface ExecuteResponse {

@@ -9,6 +9,7 @@ export function useExecute() {
   const [error, setError] = useState<string | null>(null);
   const [lastSubmittedCode, setLastSubmittedCode] = useState<string | null>(null);
   const [sameCode, setSameCode] = useState(false);
+  const [submittedPrediction, setSubmittedPrediction] = useState<string | null>(null);
 
   const isExecuting = state === "executing";
 
@@ -22,6 +23,7 @@ export function useExecute() {
     setResult(null);
     setError(null);
     setSameCode(false);
+    setSubmittedPrediction(prediction ?? null);
 
     try {
       const response = await postExecute({
@@ -67,6 +69,7 @@ export function useExecute() {
     result,
     error,
     sameCode,
+    submittedPrediction,
     runCode,
     resetToIdle,
   };

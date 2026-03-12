@@ -27,7 +27,15 @@ export default function OutputPanel({ state, result, prediction, sessionId }: Ou
   }
 
   if (state === "success" && result) {
-    return <SuccessOutput stdout={result.stdout} executionTime={result.execution_time} prediction={prediction} />;
+    return (
+      <SuccessOutput
+        stdout={result.stdout}
+        executionTime={result.execution_time}
+        prediction={prediction}
+        predictionMatch={result.prediction_match ?? null}
+        metacognitiveAccuracy={result.metacognitive_accuracy ?? null}
+      />
+    );
   }
 
   if (state === "classified_error" && result && result.classification) {
@@ -37,8 +45,8 @@ export default function OutputPanel({ state, result, prediction, sessionId }: Ou
         traceback={result.traceback}
         prediction={prediction}
         reflectionQuestion={result.reflection_question}
-        hints={result.hints}
-        hintAutoUnlocked={result.hint_auto_unlocked}
+        contextualHint={result.contextual_hint}
+        solution={result.solution}
         submissionId={result.submission_id}
         sessionId={sessionId}
       />
@@ -46,7 +54,15 @@ export default function OutputPanel({ state, result, prediction, sessionId }: Ou
   }
 
   if (state === "unclassified_error" && result) {
-    return <UnclassifiedError traceback={result.traceback} prediction={prediction} />;
+    return (
+      <UnclassifiedError
+        traceback={result.traceback}
+        stderr={result.stderr}
+        prediction={prediction}
+        predictionMatch={result.prediction_match ?? null}
+        metacognitiveAccuracy={result.metacognitive_accuracy ?? null}
+      />
+    );
   }
 
   if (state === "api_error") {

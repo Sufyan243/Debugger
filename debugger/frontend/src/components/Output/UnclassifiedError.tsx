@@ -1,9 +1,13 @@
 interface UnclassifiedErrorProps {
   traceback: string;
+  stderr: string;
   prediction: string | null;
+  predictionMatch: boolean | null;
+  metacognitiveAccuracy: number | null;
 }
 
-export default function UnclassifiedError({ traceback, prediction }: UnclassifiedErrorProps) {
+export default function UnclassifiedError({ traceback, stderr, prediction, predictionMatch, metacognitiveAccuracy }: UnclassifiedErrorProps) {
+  const actualOutput = traceback || stderr;
   return (
     <div>
       <div style={{ background: "#11111b", border: "1px solid #f38ba8", borderRadius: "8px", padding: "12px", marginBottom: "12px" }}>
@@ -14,9 +18,30 @@ export default function UnclassifiedError({ traceback, prediction }: Unclassifie
       <p style={{ color: "#a6adc8", fontSize: "13px", fontStyle: "italic" }}>
         This error type isn't in our system yet. Read the traceback carefully.
       </p>
-      {prediction && prediction.trim() && (
-        <div style={{ borderLeft: "3px solid #585b70", padding: "6px 10px", marginTop: "14px", color: "#a6adc8", fontSize: "12px", fontStyle: "italic" }}>
-          Your prediction: "{prediction}"
+      {prediction !== null && prediction.trim() !== '' && predictionMatch !== null && (
+        <div style={{ marginTop: "16px", padding: "12px", background: "#181825", borderRadius: "6px", border: "1px solid #313244" }}>
+          <div style={{ color: "#a6adc8", fontSize: "13px", fontWeight: "600", marginBottom: "12px" }}>Your Prediction vs Actual Output</div>
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ color: "#a6adc8", fontSize: "11px", textTransform: "uppercase", marginBottom: "4px" }}>Your Prediction</div>
+            <div style={{ color: "#cdd6f4", fontSize: "13px", fontFamily: "monospace" }}>{prediction}</div>
+          </div>
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ color: "#a6adc8", fontSize: "11px", textTransform: "uppercase", marginBottom: "4px" }}>Actual Output</div>
+            <div style={{ color: "#f38ba8", fontSize: "13px", fontFamily: "monospace" }}>{actualOutput}</div>
+          </div>
+          {predictionMatch ? (
+            <div style={{ color: "#a6e3a1", fontSize: "13px", fontWeight: "500" }}>✓ Correct prediction!</div>
+          ) : (
+            <div>
+              <div style={{ color: "#f38ba8", fontSize: "13px", fontWeight: "500", marginBottom: "6px" }}>✗ Mismatch detected</div>
+              <div style={{ color: "#a6adc8", fontSize: "12px", fontStyle: "italic" }}>What assumption was incorrect?</div>
+            </div>
+          )}
+          {metacognitiveAccuracy !== null && (
+            <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #313244", color: "#a6adc8", fontSize: "12px" }}>
+              Session accuracy: {(metacognitiveAccuracy * 100).toFixed(0)}%
+            </div>
+          )}
         </div>
       )}
     </div>

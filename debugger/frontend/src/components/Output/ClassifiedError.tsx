@@ -1,16 +1,26 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ClassificationData } from "../../api/client";
-import ReflectionGate from "./ReflectionGate";
-import HintTiers from "./HintTiers";
-import SolutionGate from "./SolutionGate";
+import HelpPanel from "./HelpPanel";
+
+interface ContextualHint {
+  hint_text: string;
+  affected_line: number | null;
+  explanation: string;
+}
+
+interface SolutionData {
+  solution_code: string;
+  explanation: string;
+  changes_needed: string[];
+}
 
 interface ClassifiedErrorProps {
   classification: ClassificationData;
   traceback: string;
   prediction: string | null;
   reflectionQuestion?: string;
-  hints?: Array<{ tier: number; tier_name: string; hint_text: string; unlocked: boolean }>;
-  hintAutoUnlocked?: boolean;
+  contextualHint?: ContextualHint;
+  solution?: SolutionData;
   submissionId: string;
   sessionId: string;
 }
@@ -20,32 +30,12 @@ export default function ClassifiedError({
   traceback,
   prediction,
   reflectionQuestion,
-  hints,
-  hintAutoUnlocked,
+  contextualHint,
+  solution,
   submissionId,
   sessionId,
 }: ClassifiedErrorProps) {
   const [expanded, setExpanded] = useState(false);
-  const [unlockedTiers, setUnlockedTiers] = useState<Set<number>>(new Set());
-  const [showSolutionGate, setShowSolutionGate] = useState(false);
-
-  useEffect(() => {
-    if (hintAutoUnlocked) {
-      setUnlockedTiers(new Set([1]));
-    }
-  }, [hintAutoUnlocked]);
-
-  const handleReflectionUnlock = () => {
-    setUnlockedTiers(new Set([1]));
-  };
-
-  const handleUnlockNext = (tier: number) => {
-    setUnlockedTiers((prev) => new Set([...prev, tier]));
-  };
-
-  const handleShowSolution = () => {
-    setShowSolutionGate(true);
-  };
 
   return (
     <div>
@@ -61,13 +51,23 @@ export default function ClassifiedError({
         </div>
       </div>
 
-      {reflectionQuestion && hints && !unlockedTiers.has(1) && (
-        <ReflectionGate
-          submissionId={submissionId}
-          sessionId={sessionId}
-          question={reflectionQuestion}
-          onUnlocked={handleReflectionUnlock}
-        />
+      {reflectionQuestion && (
+        <div
+          style={{
+            background: "#1e1e2e",
+            border: "1px solid #313244",
+            borderRadius: "7px",
+            padding: "13px 15px",
+            marginBottom: "12px",
+          }}
+        >
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "#a6adc8", marginBottom: "6px" }}>
+            💭 Reflection Question
+          </div>
+          <div style={{ fontSize: "13px", color: "#cdd6f4", lineHeight: 1.5 }}>
+            {reflectionQuestion}
+          </div>
+        </div>
       )}
       
       <button
@@ -85,17 +85,8 @@ export default function ClassifiedError({
         </div>
       )}
 
-      {hints && hints.length > 0 && (
-        <HintTiers
-          hints={hints}
-          unlockedTiers={unlockedTiers}
-          onUnlockNext={handleUnlockNext}
-          onShowSolution={handleShowSolution}
-        />
-      )}
-
-      {unlockedTiers.has(3) && (
-        <SolutionGate submissionId={submissionId} sessionId={sessionId} isVisible={showSolutionGate} />
+      {(contextualHint || solution) && (
+        <HelpPanel contextualHint={contextualHint || null} solution={solution || null} />
       )}
       
       {prediction && prediction.trim() && (

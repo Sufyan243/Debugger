@@ -17,7 +17,7 @@ function App() {
   const [code, setCode] = useState("");
   const [predictionEnabled, setPredictionEnabled] = useState(false);
   const [prediction, setPrediction] = useState("");
-  const { state, result, isExecuting, sameCode, runCode, resetToIdle } = useExecute();
+  const { state, result, isExecuting, sameCode, submittedPrediction, runCode, resetToIdle } = useExecute();
 
   const handleCodeChange = (v: string) => {
     resetToIdle();
@@ -49,7 +49,7 @@ function App() {
                 <div style={{ width: 14, height: 14, background: "#fff", borderRadius: "50%", position: "absolute", top: 2, left: predictionEnabled ? 18 : 2, transition: "left 0.2s" }}></div>
               </div>
             </div>
-            <RunButton onClick={() => runCode(code, sessionId, predictionEnabled ? prediction : null)} disabled={isExecuting} />
+            <RunButton onClick={() => runCode(code, sessionId, predictionEnabled && prediction.trim() ? prediction : null)} disabled={isExecuting} />
           </div>
           {predictionEnabled && (
             <div style={{ background: "#181825", borderTop: "1px solid #313244", padding: "12px 16px" }}>
@@ -75,7 +75,7 @@ function App() {
             <span style={{ color: "#cdd6f4", fontWeight: 600 }}>Output</span>
           </div>
           <div style={{ flex: 1, padding: 16, overflow: "auto" }}>
-            <OutputPanel state={state} result={result} prediction={predictionEnabled ? prediction : null} sessionId={sessionId} />
+            <OutputPanel state={state} result={result} prediction={submittedPrediction} sessionId={sessionId} />
           </div>
         </div>
       </div>

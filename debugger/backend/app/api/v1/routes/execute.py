@@ -1,12 +1,15 @@
 import asyncio
 import logging
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.v1.schemas.execute import ExecuteRequest, ExecuteResponse, ExecuteData, ClassificationData, HintData
+from sqlalchemy import select, func
+from app.api.v1.schemas.execute import ExecuteRequest, ExecuteResponse, ExecuteData, ClassificationData, ContextualHint, SolutionData
 from app.db.session import get_db
-from app.db.models import CodeSubmission, ExecutionResult, ErrorRecord, HintSequence
+from app.db.models import CodeSubmission, ExecutionResult, ErrorRecord, HintSequence, MetacognitiveMetric
 from app.execution.service import execute_code
-from app.cognitive.engine import classify, get_reflection_question
+from app.cognitive.engine import classify, get_reflection_question, generate_contextual_hint, generate_solution
+from app.intelligence.prediction import compare_predictions, compute_accuracy
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -14,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 @router.post("/execute", response_model=ExecuteResponse)
 async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(get_db)) -> ExecuteResponse:
+    # Initialize prediction tracking variables
+    prediction_match: Optional[bool] = None
+    metacognitive_accuracy: Optional[float] = None
+    
     # Write CodeSubmission
     try:
         submission = CodeSubmission(
@@ -57,6 +64,79 @@ async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(ge
     except Exception as e:
         logger.warning(f"Failed to write ExecutionResult: {e}")
     
+    # Prediction comparison and metacognitive metric upsert
+    if request.prediction is not None:
+        try:
+            # Normalize prediction for comparison
+            normalized_prediction = request.prediction.strip() if request.prediction else ""
+            # Determine actual output for comparison based on execution success
+            actual_output_for_comparison = exec_result.stdout if exec_result.success else (exec_result.traceback or exec_result.stderr)
+            prediction_match = compare_predictions(normalized_prediction, actual_output_for_comparison)
+            
+            # Atomic upsert MetacognitiveMetric with row-level locking
+            stmt = select(MetacognitiveMetric).where(
+                MetacognitiveMetric.session_id == request.session_id
+            ).with_for_update()
+            result = await db.execute(stmt)
+            metric = result.scalar_one_or_none()
+            
+            if metric:
+                metric.total_predictions += 1
+                if prediction_match:
+                    metric.correct_predictions += 1
+                metric.accuracy_score = compute_accuracy(metric.correct_predictions, metric.total_predictions)
+                metric.last_updated = func.now()
+            else:
+                metric = MetacognitiveMetric(
+                    session_id=request.session_id,
+                    total_predictions=1,
+                    correct_predictions=1 if prediction_match else 0,
+                    accuracy_score=1.0 if prediction_match else 0.0
+                )
+                db.add(metric)
+            
+            try:
+                await db.commit()
+            except Exception as commit_error:
+                await db.rollback()
+                # Handle race condition: re-query with lock and update
+                from sqlalchemy.exc import IntegrityError
+                if isinstance(commit_error, IntegrityError):
+                    stmt = select(MetacognitiveMetric).where(
+                        MetacognitiveMetric.session_id == request.session_id
+                    ).with_for_update()
+                    result = await db.execute(stmt)
+                    metric = result.scalar_one_or_none()
+                    if metric:
+                        metric.total_predictions += 1
+                        if prediction_match:
+                            metric.correct_predictions += 1
+                        metric.accuracy_score = compute_accuracy(metric.correct_predictions, metric.total_predictions)
+                        metric.last_updated = func.now()
+                        await db.commit()
+                    else:
+                        logger.warning(f"Failed to upsert MetacognitiveMetric after rollback: {commit_error}")
+                        raise
+                else:
+                    raise
+            
+            # Fetch accuracy after successful commit
+            try:
+                await db.refresh(metric)
+                metacognitive_accuracy = metric.accuracy_score
+            except Exception as refresh_error:
+                # Re-query if refresh fails
+                stmt = select(MetacognitiveMetric).where(MetacognitiveMetric.session_id == request.session_id)
+                result = await db.execute(stmt)
+                metric = result.scalar_one_or_none()
+                if metric:
+                    metacognitive_accuracy = metric.accuracy_score
+                else:
+                    logger.warning(f"Failed to fetch MetacognitiveMetric after commit: {refresh_error}")
+        except Exception as e:
+            await db.rollback()
+            logger.warning(f"Failed to process prediction comparison: {e}")
+    
     # Handle terminal error states
     if exec_result.timed_out:
         return ExecuteResponse(
@@ -82,10 +162,13 @@ async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(ge
     # Classification
     classification_result = None
     reflection_question = None
-    hints = None
-    hint_auto_unlocked = False
+    contextual_hint = None
+    solution = None
     
-    if not exec_result.success:
+    # Trigger Phase 2 features on error OR wrong prediction
+    should_provide_assistance = not exec_result.success or (prediction_match is not None and not prediction_match)
+    
+    if should_provide_assistance and not exec_result.success:
         classification_result = classify(exec_result.traceback)
         if classification_result is not None and execution_result_id is not None:
             # Count prior errors in same session+concept
@@ -100,7 +183,6 @@ async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(ge
             # Current failure count includes this error
             current_failure_count = prior_count + 1
             failed_attempts = current_failure_count
-            hint_auto_unlocked = current_failure_count >= 2
             
             try:
                 error_record = ErrorRecord(
@@ -118,23 +200,23 @@ async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(ge
             # Get reflection question
             reflection_question = get_reflection_question(classification_result.concept_category)
             
-            # Get hints
-            from sqlalchemy import select
-            stmt = select(HintSequence).where(
-                HintSequence.concept_category == classification_result.concept_category
-            ).order_by(HintSequence.tier)
-            result = await db.execute(stmt)
-            hint_rows = result.scalars().all()
-            
-            hints = [
-                HintData(
-                    tier=h.tier,
-                    tier_name=h.tier_name,
-                    hint_text=h.hint_text,
-                    unlocked=False
+            # Generate contextual hint
+            hint_result = generate_contextual_hint(exec_result.traceback, request.code)
+            if hint_result:
+                contextual_hint = ContextualHint(
+                    hint_text=hint_result.hint_text,
+                    affected_line=hint_result.affected_line,
+                    explanation=hint_result.explanation
                 )
-                for h in hint_rows
-            ]
+            
+            # Generate solution
+            solution_result = generate_solution(exec_result.traceback, request.code)
+            if solution_result:
+                solution = SolutionData(
+                    solution_code=solution_result.solution_code,
+                    explanation=solution_result.explanation,
+                    changes_needed=solution_result.changes_needed
+                )
     
     # Build response
     status = "success" if exec_result.success else "error"
@@ -155,8 +237,10 @@ async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(ge
         execution_time=exec_result.execution_time,
         classification=classification_data,
         reflection_question=reflection_question,
-        hints=hints,
-        hint_auto_unlocked=hint_auto_unlocked
+        contextual_hint=contextual_hint,
+        solution=solution,
+        prediction_match=prediction_match,
+        metacognitive_accuracy=metacognitive_accuracy
     )
     
     message = ""

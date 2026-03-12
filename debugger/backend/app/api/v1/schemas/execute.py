@@ -23,11 +23,16 @@ class ClassificationData(BaseModel):
     cognitive_skill: str
 
 
-class HintData(BaseModel):
-    tier: int
-    tier_name: str
+class ContextualHint(BaseModel):
     hint_text: str
-    unlocked: bool
+    affected_line: Optional[int] = None
+    explanation: str
+
+
+class SolutionData(BaseModel):
+    solution_code: str
+    explanation: str
+    changes_needed: list[str]
 
 
 class ExecuteData(BaseModel):
@@ -39,8 +44,10 @@ class ExecuteData(BaseModel):
     execution_time: float
     classification: Optional[ClassificationData] = None
     reflection_question: Optional[str] = None
-    hints: Optional[list[HintData]] = None
-    hint_auto_unlocked: bool = False
+    contextual_hint: Optional[ContextualHint] = None
+    solution: Optional[SolutionData] = None
+    prediction_match: Optional[bool] = None
+    metacognitive_accuracy: Optional[float] = None
 
 
 class ExecuteResponse(BaseModel):
