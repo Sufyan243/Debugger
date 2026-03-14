@@ -1,7 +1,16 @@
 import { useState } from "react";
 
 interface Props {
-  onAuth: (token: string, username: string) => void;
+  onAuth: (token: string, username: string, userId: string) => void;
+}
+
+function extractUserId(token: string): string {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.sub as string;
+  } catch {
+    return crypto.randomUUID();
+  }
 }
 
 const BASE = "http://localhost:8000/api/v1";
@@ -25,7 +34,7 @@ export default function LoginPage({ onAuth }: Props) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? "Something went wrong");
-      onAuth(data.access_token, data.username);
+      onAuth(data.access_token, data.username, extractUserId(data.access_token));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {

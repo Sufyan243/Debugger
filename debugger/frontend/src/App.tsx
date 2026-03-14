@@ -14,15 +14,12 @@ function App() {
   const [jwt, setJwt] = useState<string>(() => localStorage.getItem(JWT_KEY) ?? "");
   const [username, setUsername] = useState<string>(() => localStorage.getItem(USERNAME_KEY) ?? "");
 
-  const sessionId = (() => {
-    let id = localStorage.getItem(SESSION_KEY);
-    if (!id) { id = crypto.randomUUID(); localStorage.setItem(SESSION_KEY, id); }
-    return id;
-  })();
+  const sessionId = localStorage.getItem(SESSION_KEY) ?? crypto.randomUUID();
 
-  function handleAuth(token: string, user: string) {
+  function handleAuth(token: string, user: string, userId: string) {
     localStorage.setItem(JWT_KEY, token);
     localStorage.setItem(USERNAME_KEY, user);
+    localStorage.setItem(SESSION_KEY, userId);
     setJwt(token);
     setUsername(user);
   }
@@ -30,6 +27,7 @@ function App() {
   function handleLogout() {
     localStorage.removeItem(JWT_KEY);
     localStorage.removeItem(USERNAME_KEY);
+    localStorage.removeItem(SESSION_KEY);
     setJwt("");
     setUsername("");
   }
