@@ -1,0 +1,76 @@
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.db.session import get_db
+from app.db.models import MetacognitiveMetric, SessionSnapshot
+from app.intelligence.analytics_service import get_concept_stats, get_weakness_profile, get_session_summary
+from app.api.v1.schemas.analytics import (
+    ConceptStatItem,
+    ConceptStatsResponse,
+    WeaknessProfileResponse,
+    SessionSummaryResponse,
+    MetacognitiveResponse,
+)
+from app.api.v1.deps.auth_guard import get_current_user_id
+
+router = APIRouter()
+
+
+@router.get("/analytics/concepts", response_model=ConceptStatsResponse)
+async def concepts_handler(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user_id),
+) -> ConceptStatsResponse:
+    data = await get_concept_stats(session_id, db)
+    return ConceptStatsResponse(concepts=[ConceptStatItem(**item) for item in data])
+
+
+@router.get("/analytics/weakness", response_model=WeaknessProfileResponse)
+async def weakness_handler(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user_id),
+) -> WeaknessProfileResponse:
+    data = await get_weakness_profile(session_id, db)
+    return WeaknessProfileResponse(weak_concepts=[ConceptStatItem(**item) for item in data])
+
+
+@router.get("/analytics/session-summary", response_model=SessionSummaryResponse)
+async def session_summary_handler(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user_id),
+) -> SessionSummaryResponse:
+    summary = await get_session_summary(session_id, db)
+    snapshot = SessionSnapshot(
+        session_id=session_id,
+        submissions_count=summary["submissions_count"],
+        errors_count=summary["errors_count"],
+        concepts_learned=summary["concepts_learned"],
+        hints_used=summary["hints_used"],
+        prediction_accuracy=summary["prediction_accuracy"],
+    )
+    db.add(snapshot)
+    await db.commit()
+    return SessionSummaryResponse(**summary)
+
+
+@router.get("/analytics/metacognitive", response_model=MetacognitiveResponse)
+async def metacognitive_handler(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user_id),
+) -> MetacognitiveResponse:
+    stmt = select(MetacognitiveMetric).where(MetacognitiveMetric.session_id == session_id)
+    result = await db.execute(stmt)
+    metric = result.scalar_one_or_none()
+    if metric is None:
+        raise HTTPException(status_code=404, detail="No metacognitive data found for this session")
+    return MetacognitiveResponse(
+        session_id=metric.session_id,
+        accuracy_score=metric.accuracy_score,
+        total_predictions=metric.total_predictions,
+        correct_predictions=metric.correct_predictions,
+    )

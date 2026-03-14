@@ -21,8 +21,6 @@ interface ClassifiedErrorProps {
   reflectionQuestion?: string;
   contextualHint?: ContextualHint;
   solution?: SolutionData;
-  submissionId: string;
-  sessionId: string;
 }
 
 export default function ClassifiedError({
@@ -32,8 +30,6 @@ export default function ClassifiedError({
   reflectionQuestion,
   contextualHint,
   solution,
-  submissionId,
-  sessionId,
 }: ClassifiedErrorProps) {
   const [expanded, setExpanded] = useState(false);
 

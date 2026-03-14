@@ -1,4 +1,8 @@
-import { HintData } from "../../api/client";
+interface HintData {
+  tier: number;
+  tier_name: string;
+  hint_text: string;
+}
 
 interface HintTiersProps {
   hints: HintData[];

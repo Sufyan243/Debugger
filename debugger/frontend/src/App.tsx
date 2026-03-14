@@ -2,22 +2,45 @@ import { useState } from "react";
 import EditorPanel from "./components/Editor/EditorPanel";
 import RunButton from "./components/Editor/RunButton";
 import OutputPanel from "./components/Output/OutputPanel";
+import DashboardPage from "./components/Dashboard/DashboardPage";
+import LoginPage from "./components/Auth/LoginPage";
 import { useExecute } from "./hooks/useExecute";
 
-function App() {
-  const [sessionId] = useState(() => {
-    let id = localStorage.getItem("debugger_session_id");
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem("debugger_session_id", id);
-    }
-    return id;
-  });
+const JWT_KEY = "debugger_jwt";
+const USERNAME_KEY = "debugger_username";
+const SESSION_KEY = "debugger_session_id";
 
+function App() {
+  const [jwt, setJwt] = useState<string>(() => localStorage.getItem(JWT_KEY) ?? "");
+  const [username, setUsername] = useState<string>(() => localStorage.getItem(USERNAME_KEY) ?? "");
+
+  const sessionId = (() => {
+    let id = localStorage.getItem(SESSION_KEY);
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem(SESSION_KEY, id); }
+    return id;
+  })();
+
+  function handleAuth(token: string, user: string) {
+    localStorage.setItem(JWT_KEY, token);
+    localStorage.setItem(USERNAME_KEY, user);
+    setJwt(token);
+    setUsername(user);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(JWT_KEY);
+    localStorage.removeItem(USERNAME_KEY);
+    setJwt("");
+    setUsername("");
+  }
+
+  const [view, setView] = useState<"editor" | "dashboard">("editor");
   const [code, setCode] = useState("");
   const [predictionEnabled, setPredictionEnabled] = useState(false);
   const [prediction, setPrediction] = useState("");
   const { state, result, isExecuting, sameCode, submittedPrediction, runCode, resetToIdle } = useExecute();
+
+  if (!jwt) return <LoginPage onAuth={handleAuth} />;
 
   const handleCodeChange = (v: string) => {
     resetToIdle();
@@ -28,12 +51,15 @@ function App() {
     <div style={{ background: "#1e1e2e", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <nav style={{ background: "#1e1e2e", borderBottom: "1px solid #313244", height: 48, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px" }}>
         <span style={{ color: "#cdd6f4", fontWeight: 700 }}>⬡ Cognitive Debugger</span>
-        <div style={{ display: "flex", gap: "24px" }}>
-          <a style={{ color: "#cdd6f4", textDecoration: "none", cursor: "pointer" }}>Editor</a>
-          <a style={{ color: "#585b70", textDecoration: "none", cursor: "pointer" }}>My Progress</a>
+        <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
+          <a style={{ color: view === "editor" ? "#cdd6f4" : "#585b70", textDecoration: "none", cursor: "pointer" }} onClick={() => setView("editor")}>Editor</a>
+          <a style={{ color: view === "dashboard" ? "#cdd6f4" : "#585b70", textDecoration: "none", cursor: "pointer" }} onClick={() => setView("dashboard")}>My Progress</a>
+          <span style={{ color: "#585b70", fontSize: 12 }}>{username}</span>
+          <a style={{ color: "#f38ba8", fontSize: 12, cursor: "pointer" }} onClick={handleLogout}>Logout</a>
         </div>
       </nav>
 
+      {view === "editor" && (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", flex: 1, height: "calc(100vh - 48px)" }}>
         <div style={{ display: "flex", flexDirection: "column", background: "#1e1e2e" }}>
           <div style={{ background: "#181825", padding: "12px 16px", borderBottom: "1px solid #313244", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -75,10 +101,12 @@ function App() {
             <span style={{ color: "#cdd6f4", fontWeight: 600 }}>Output</span>
           </div>
           <div style={{ flex: 1, padding: 16, overflow: "auto" }}>
-            <OutputPanel state={state} result={result} prediction={submittedPrediction} sessionId={sessionId} />
+            <OutputPanel state={state} result={result} prediction={submittedPrediction} />
           </div>
         </div>
       </div>
+      )}
+      {view === "dashboard" && <DashboardPage sessionId={sessionId} ownerToken={jwt} tokenReady={true} />}
     </div>
   );
 }

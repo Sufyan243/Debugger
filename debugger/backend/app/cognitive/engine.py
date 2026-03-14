@@ -1,6 +1,14 @@
 from dataclasses import dataclass
 import re
+from difflib import get_close_matches
 from typing import Optional
+
+PYTHON_BUILTINS = [
+    "print", "len", "range", "int", "str", "float", "list", "dict", "set", "tuple",
+    "input", "type", "isinstance", "enumerate", "zip", "map", "filter", "sorted",
+    "min", "max", "sum", "abs", "round", "open", "bool", "bytes", "repr", "format",
+    "hasattr", "getattr", "setattr", "append", "extend", "insert", "remove", "pop",
+]
 
 
 @dataclass
@@ -31,6 +39,8 @@ class SolutionData:
     changes_needed: list[str]
 
 
+TYPO_CLASSIFICATION = ClassificationResult("NameError", "Typo / Spelling", "Attention to detail")
+
 TAXONOMY = {
     "NameError": ClassificationResult("NameError", "Variable Initialization", "State awareness"),
     "TypeError": ClassificationResult("TypeError", "Data Type Compatibility", "Type reasoning"),
@@ -41,6 +51,7 @@ TAXONOMY = {
 }
 
 REFLECTION_QUESTIONS = {
+    "Typo / Spelling": "Look closely at the function or variable name — does it match the correct Python spelling?",
     "Variable Initialization": "Where in your code should the variable have been created before it was used?",
     "Data Type Compatibility": "What types of values are you trying to combine, and do they work together in Python?",
     "List Management": "What is the length of your list, and which index are you trying to access?",
@@ -134,11 +145,22 @@ def classify(traceback: str) -> Optional[ClassificationResult]:
     parsed = parse_exception(traceback)
     if parsed is None:
         return None
+    if parsed.exception_type == "NameError":
+        match = re.search(r"name '(\w+)' is not defined", parsed.message)
+        var_name = match.group(1) if match else ""
+        if var_name and _detect_typo(var_name):
+            return TYPO_CLASSIFICATION
     return TAXONOMY.get(parsed.exception_type)
 
 
 def get_reflection_question(concept_category: str) -> str:
     return REFLECTION_QUESTIONS.get(concept_category, "What do you think caused this error?")
+
+
+def _detect_typo(var_name: str) -> Optional[str]:
+    """Return the likely intended builtin if var_name looks like a typo."""
+    matches = get_close_matches(var_name, PYTHON_BUILTINS, n=1, cutoff=0.6)
+    return matches[0] if matches else None
 
 
 def generate_contextual_hint(traceback: str, user_code: str) -> Optional[ContextualHint]:
@@ -155,10 +177,16 @@ def generate_contextual_hint(traceback: str, user_code: str) -> Optional[Context
             explanation="Review the error message and check the highlighted line."
         )
     
-    # Extract variable name for NameError
     if parsed.exception_type == "NameError":
         match = re.search(r"name '(\w+)' is not defined", parsed.message)
         var_name = match.group(1) if match else "variable"
+        suggestion = _detect_typo(var_name)
+        if suggestion:
+            return ContextualHint(
+                hint_text=f"'{var_name}' is not defined — did you mean '{suggestion}'?",
+                affected_line=parsed.line_number,
+                explanation=f"It looks like a typo. '{var_name}' is not a Python builtin, but '{suggestion}' is."
+            )
         return hint_generator(var_name, parsed.line_number)
     
     return hint_generator(parsed.message, parsed.line_number)
@@ -170,6 +198,20 @@ def generate_solution(traceback: str, user_code: str) -> Optional[SolutionData]:
     if parsed is None:
         return None
     
+    if parsed.exception_type == "NameError":
+        match = re.search(r"name '(\w+)' is not defined", parsed.message)
+        var_name = match.group(1) if match else "variable"
+        suggestion = _detect_typo(var_name)
+        if suggestion:
+            fixed_code = re.sub(r'\b' + re.escape(var_name) + r'\b', suggestion, user_code)
+            return SolutionData(
+                solution_code=fixed_code,
+                explanation=f"Replace '{var_name}' with '{suggestion}'.",
+                changes_needed=[f"Rename '{var_name}' → '{suggestion}' on line {parsed.line_number}"]
+            )
+        solution_generator = SOLUTION_TEMPLATES.get("NameError")
+        return solution_generator(var_name, user_code)
+    
     solution_generator = SOLUTION_TEMPLATES.get(parsed.exception_type)
     if solution_generator is None:
         return SolutionData(
@@ -177,11 +219,5 @@ def generate_solution(traceback: str, user_code: str) -> Optional[SolutionData]:
             explanation="Check the error message for clues.",
             changes_needed=["Review the traceback", "Fix the highlighted line"]
         )
-    
-    # Extract variable name for NameError
-    if parsed.exception_type == "NameError":
-        match = re.search(r"name '(\w+)' is not defined", parsed.message)
-        var_name = match.group(1) if match else "variable"
-        return solution_generator(var_name, user_code)
     
     return solution_generator(parsed.message, user_code)

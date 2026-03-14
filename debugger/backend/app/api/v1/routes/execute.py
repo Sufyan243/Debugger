@@ -3,10 +3,10 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, desc
 from app.api.v1.schemas.execute import ExecuteRequest, ExecuteResponse, ExecuteData, ClassificationData, ContextualHint, SolutionData
 from app.db.session import get_db
-from app.db.models import CodeSubmission, ExecutionResult, ErrorRecord, HintSequence, MetacognitiveMetric
+from app.db.models import CodeSubmission, ExecutionResult, ErrorRecord, HintSequence, MetacognitiveMetric, HintEvent
 from app.execution.service import execute_code
 from app.cognitive.engine import classify, get_reflection_question, generate_contextual_hint, generate_solution
 from app.intelligence.prediction import compare_predictions, compute_accuracy
@@ -172,8 +172,7 @@ async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(ge
         classification_result = classify(exec_result.traceback)
         if classification_result is not None and execution_result_id is not None:
             # Count prior errors in same session+concept
-            from sqlalchemy import select, func as sql_func
-            stmt = select(sql_func.count(ErrorRecord.id)).join(ExecutionResult).join(CodeSubmission).where(
+            stmt = select(func.count(ErrorRecord.id)).join(ExecutionResult).join(CodeSubmission).where(
                 CodeSubmission.session_id == request.session_id,
                 ErrorRecord.concept_category == classification_result.concept_category
             )
@@ -200,7 +199,7 @@ async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(ge
             # Get reflection question
             reflection_question = get_reflection_question(classification_result.concept_category)
             
-            # Generate contextual hint
+            # Generate contextual hint and persist the event
             hint_result = generate_contextual_hint(exec_result.traceback, request.code)
             if hint_result:
                 contextual_hint = ContextualHint(
@@ -208,6 +207,17 @@ async def execute_handler(request: ExecuteRequest, db: AsyncSession = Depends(ge
                     affected_line=hint_result.affected_line,
                     explanation=hint_result.explanation
                 )
+                try:
+                    db.add(HintEvent(
+                        submission_id=submission_id,
+                        session_id=request.session_id,
+                        hint_text=hint_result.hint_text,
+                        affected_line=hint_result.affected_line,
+                    ))
+                    await db.commit()
+                except Exception as e:
+                    await db.rollback()
+                    logger.warning(f"Failed to persist HintEvent: {e}")
             
             # Generate solution
             solution_result = generate_solution(exec_result.traceback, request.code)

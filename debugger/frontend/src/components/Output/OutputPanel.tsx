@@ -10,10 +10,9 @@ interface OutputPanelProps {
   state: ExecuteState;
   result: ExecuteData | null;
   prediction: string | null;
-  sessionId: string;
 }
 
-export default function OutputPanel({ state, result, prediction, sessionId }: OutputPanelProps) {
+export default function OutputPanel({ state, result, prediction }: OutputPanelProps) {
   if (state === "idle") {
     return (
       <p className="text-[#585b70] text-sm text-center mt-16">
@@ -44,11 +43,9 @@ export default function OutputPanel({ state, result, prediction, sessionId }: Ou
         classification={result.classification}
         traceback={result.traceback}
         prediction={prediction}
-        reflectionQuestion={result.reflection_question}
-        contextualHint={result.contextual_hint}
-        solution={result.solution}
-        submissionId={result.submission_id}
-        sessionId={sessionId}
+        reflectionQuestion={result.reflection_question ?? undefined}
+        contextualHint={result.contextual_hint ?? undefined}
+        solution={result.solution ?? undefined}
       />
     );
   }

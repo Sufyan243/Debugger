@@ -6,6 +6,10 @@ from app.api.v1.routes.execute import router as execute_router
 from app.api.v1.routes.reflect import router as reflect_router
 from app.api.v1.routes.hint import router as hint_router
 from app.api.v1.routes.solution import router as solution_router
+from app.api.v1.routes.analytics import router as analytics_router
+from app.api.v1.routes.export import router as export_router
+from app.api.v1.routes.session import router as session_router
+from app.api.v1.routes.auth import router as auth_router
 
 
 @asynccontextmanager
@@ -38,3 +42,7 @@ app.include_router(execute_router, prefix="/api/v1", tags=["execute"])
 app.include_router(reflect_router, prefix="/api/v1", tags=["reflect"])
 app.include_router(hint_router, prefix="/api/v1", tags=["hint"])
 app.include_router(solution_router, prefix="/api/v1", tags=["solution"])
+app.include_router(analytics_router, prefix="/api/v1", tags=["analytics"])
+app.include_router(export_router, prefix="/api/v1", tags=["export"])
+app.include_router(session_router, prefix="/api/v1", tags=["session"])
+app.include_router(auth_router, prefix="/api/v1", tags=["auth"])

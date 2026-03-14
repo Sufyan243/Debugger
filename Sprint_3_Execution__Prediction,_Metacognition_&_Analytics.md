@@ -1,17 +1,5 @@
 # Phase Breakdown
 
-## Task 3: Phase 3 — Learning Analytics Service (Weakness, Mastery & Session Metrics)
-
-Build the intelligence layer that produces all analytics signals:
-
-- Create debugger/backend/app/intelligence/analytics_service.py with async functions:
-  - `get_concept_stats(session_id, db)` — counts errors per concept over last 10 submissions; returns list of `{concept, error_count, attempts, success_streak}`
-  - `get_weakness_profile(session_id, db)` — filters concepts with `error_count >= 3`; returns sorted weak-concept list
-  - `get_hint_dependency_ratio(session_id, db)` — `hints_used / attempts` per concept
-  - `get_session_summary(session_id, db)` — aggregates submissions, errors, concepts learned, hints used, prediction accuracy for the session
-- Add `SessionSnapshot` ORM model to `d:\SAAS\Debugger\debugger\backend\app\db\models.py` (fields: `id`, `session_id`, `submissions_count`, `errors_count`, `concepts_learned`, `hints_used`, `prediction_accuracy`, `created_at`)
-- Add migration `005_sprint3_session_snapshot.py` in `d:\SAAS\Debugger\debugger\backend\alembic\versions` (down_revision = '004')
-- All queries use existing `ErrorRecord`, `CodeSubmission`, `ExecutionResult`, `ReflectionResponse` tables — no new packages required
 
 
 ## Task 4: Phase 4 — Analytics & Export API Endpoints

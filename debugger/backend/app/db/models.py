@@ -95,3 +95,50 @@ class MetacognitiveMetric(Base):
     total_predictions: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     correct_predictions: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SessionOwnership(Base):
+    """
+    Maps a session_id to a server-issued owner_token.
+    The owner_token is generated server-side on session registration and returned
+    to the client once. All subsequent session-scoped requests must present it
+    via X-Session-Token to prove ownership.
+    """
+    __tablename__ = "session_ownership"
+
+    session_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    owner_token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class HintEvent(Base):
+    __tablename__ = "hint_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
+    submission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("code_submissions.id", ondelete="CASCADE"), nullable=False)
+    session_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    hint_text: Mapped[str] = mapped_column(Text, nullable=False)
+    affected_line: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SessionSnapshot(Base):
+    __tablename__ = "session_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
+    session_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    submissions_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    errors_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    concepts_learned: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    hints_used: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    prediction_accuracy: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
