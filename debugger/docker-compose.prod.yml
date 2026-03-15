@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  postgres:
+    profiles: ["dev-only"]
+
+  frontend:
+    profiles: ["dev-only"]
+
+  pgadmin:
+    profiles: ["dev-only"]
+
+  sandbox-puller:
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        PRODUCTION: "true"
+    restart: always
+    depends_on:
+      - sandbox-puller
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

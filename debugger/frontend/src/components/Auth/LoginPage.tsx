@@ -13,7 +13,7 @@ function extractUserId(token: string): string {
   }
 }
 
-const BASE = "http://localhost:8000/api/v1";
+const BASE = `${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/api/v1`;
 
 export default function LoginPage({ onAuth }: Props) {
   const [mode, setMode] = useState<"login" | "register">("login");

@@ -1,6 +1,4 @@
-// TODO: Regenerate this file by running: npm run generate:api
-// This is a hand-written stub matching the current backend schema.
-// Run the generator once the backend is available at http://localhost:8000
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 export interface ExecuteRequest {
   code: string;
@@ -50,7 +48,7 @@ export interface ExecuteResponse {
 }
 
 export async function postExecute(req: ExecuteRequest): Promise<ExecuteResponse> {
-  const response = await fetch("http://localhost:8000/api/v1/execute", {
+  const response = await fetch(`${API_BASE}/api/v1/execute`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -66,7 +64,7 @@ export async function postExecute(req: ExecuteRequest): Promise<ExecuteResponse>
 }
 
 export async function postReflect(submissionId: string, responseText: string, sessionId: string) {
-  const response = await fetch("http://localhost:8000/api/v1/reflect", {
+  const response = await fetch(`${API_BASE}/api/v1/reflect`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ submission_id: submissionId, response_text: responseText, session_id: sessionId }),
@@ -76,7 +74,7 @@ export async function postReflect(submissionId: string, responseText: string, se
 }
 
 export async function postHint(submissionId: string, tier: number, sessionId: string) {
-  const response = await fetch("http://localhost:8000/api/v1/hint", {
+  const response = await fetch(`${API_BASE}/api/v1/hint`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ submission_id: submissionId, tier, session_id: sessionId }),
@@ -86,7 +84,7 @@ export async function postHint(submissionId: string, tier: number, sessionId: st
 }
 
 export async function postSolutionRequest(submissionId: string, sessionId: string) {
-  const response = await fetch("http://localhost:8000/api/v1/solution-request", {
+  const response = await fetch(`${API_BASE}/api/v1/solution-request`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ submission_id: submissionId, session_id: sessionId }),
@@ -143,7 +141,7 @@ export interface SessionRegisterResponse {
 }
 
 export async function registerSession(sessionId: string): Promise<SessionRegisterResponse> {
-  const response = await fetch("http://localhost:8000/api/v1/session/register", {
+  const response = await fetch(`${API_BASE}/api/v1/session/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId }),
@@ -154,7 +152,7 @@ export async function registerSession(sessionId: string): Promise<SessionRegiste
 }
 
 export async function recoverSession(sessionId: string, currentToken: string): Promise<SessionRegisterResponse> {
-  const response = await fetch("http://localhost:8000/api/v1/session/recover", {
+  const response = await fetch(`${API_BASE}/api/v1/session/recover`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Session-Token": currentToken },
     body: JSON.stringify({ session_id: sessionId }),
@@ -164,25 +162,25 @@ export async function recoverSession(sessionId: string, currentToken: string): P
 }
 
 export async function fetchConceptStats(sessionId: string, ownerToken: string): Promise<ConceptStatsResponse> {
-  const response = await sessionFetch(`http://localhost:8000/api/v1/analytics/concepts?session_id=${sessionId}`, ownerToken);
+  const response = await sessionFetch(`${API_BASE}/api/v1/analytics/concepts?session_id=${sessionId}`, ownerToken);
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 }
 
 export async function fetchWeaknessProfile(sessionId: string, ownerToken: string): Promise<WeaknessProfileResponse> {
-  const response = await sessionFetch(`http://localhost:8000/api/v1/analytics/weakness?session_id=${sessionId}`, ownerToken);
+  const response = await sessionFetch(`${API_BASE}/api/v1/analytics/weakness?session_id=${sessionId}`, ownerToken);
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 }
 
 export async function fetchSessionSummary(sessionId: string, ownerToken: string): Promise<SessionSummaryResponse> {
-  const response = await sessionFetch(`http://localhost:8000/api/v1/analytics/session-summary?session_id=${sessionId}`, ownerToken);
+  const response = await sessionFetch(`${API_BASE}/api/v1/analytics/session-summary?session_id=${sessionId}`, ownerToken);
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 }
 
 export async function fetchMetacognitive(sessionId: string, ownerToken: string): Promise<MetacognitiveResponse> {
-  const response = await sessionFetch(`http://localhost:8000/api/v1/analytics/metacognitive?session_id=${sessionId}`, ownerToken);
+  const response = await sessionFetch(`${API_BASE}/api/v1/analytics/metacognitive?session_id=${sessionId}`, ownerToken);
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 }

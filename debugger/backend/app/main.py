@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import settings
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.execute import router as execute_router
 from app.api.v1.routes.reflect import router as reflect_router
@@ -31,7 +32,7 @@ app = FastAPI(title="Cognitive Debugger API", version="1.0.0", lifespan=lifespan
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
