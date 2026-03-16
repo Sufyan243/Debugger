@@ -12,3 +12,7 @@ body {
   font-family: "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+section + section {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}

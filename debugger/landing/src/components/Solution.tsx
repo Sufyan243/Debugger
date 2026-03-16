@@ -1,10 +1,10 @@
 import { motion } from "framer-motion"
 
 const cards = [
-  { icon: "✍️", title: "Write Code", desc: "Paste or type any Python snippet" },
-  { icon: "🛡️", title: "Run Safely", desc: "Isolated sandbox — nothing breaks your machine" },
-  { icon: "🔍", title: "Understand Error", desc: "Plain-English explanation of what went wrong" },
-  { icon: "🧠", title: "Fix with Guidance", desc: "Cognitive hints that teach, not just solve" },
+  { num: "01", title: "Write Code", desc: "Paste or type any Python snippet into the editor" },
+  { num: "02", title: "Run Safely", desc: "Isolated sandbox, nothing touches your machine" },
+  { num: "03", title: "Understand Error", desc: "Plain-English explanation of what went wrong" },
+  { num: "04", title: "Fix with Guidance", desc: "Cognitive hints that teach, not just solve" },
 ]
 
 export default function Solution() {
@@ -32,11 +32,8 @@ export default function Solution() {
               transition={{ duration: 0.4, delay: i * 0.08 }}
               className="bg-card rounded-xl p-6 border border-white/5 flex flex-col gap-3"
             >
-              <span className="text-2xl">{card.icon}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-accent text-xs font-bold">{i + 1}</span>
-                <span className="text-bright font-semibold text-sm">{card.title}</span>
-              </div>
+              <span className="text-accent/40 text-xs font-bold tracking-widest">{card.num}</span>
+              <p className="text-bright font-semibold text-sm">{card.title}</p>
               <p className="text-muted text-sm leading-relaxed">{card.desc}</p>
             </motion.div>
           ))}

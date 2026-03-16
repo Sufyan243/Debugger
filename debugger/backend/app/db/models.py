@@ -139,6 +139,22 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
-    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
+    hashed_password: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False, server_default="email")
+    provider_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint('provider', 'provider_id', name='uq_users_provider_id'),
+    )
+
+
+class AnonSession(Base):
+    __tablename__ = "anon_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    merged_into: Mapped[Optional[uuid.UUID]] = mapped_column(nullable=True)

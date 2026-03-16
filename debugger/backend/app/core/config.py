@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     SANDBOX_MEM_LIMIT: str = "64m"
     SANDBOX_CPU_QUOTA: int = 500_000_000
     MAX_CODE_LENGTH: int = 10000
+    FRONTEND_URL: str = "http://localhost:5173"
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
 
     @property
     def allowed_origins_list(self) -> list[str]:
