@@ -91,12 +91,12 @@ async def register(req: EmailRegisterRequest, db: AsyncSession = Depends(get_db)
     if existing:
         if existing.email_verified:
             raise HTTPException(status_code=409, detail="Email already registered")
-        # Unverified account — regenerate token and resend
+        # Unverified account — regenerate token and resend; password unchanged
+        # until inbox ownership is proven to prevent pre-verification takeover.
         token = secrets.token_urlsafe(64)
         expiry = datetime.now(timezone.utc) + timedelta(minutes=settings.VERIFICATION_TOKEN_EXPIRE_MINUTES)
         existing.verification_token = token
         existing.verification_token_expires_at = expiry
-        existing.hashed_password = hash_password(req.password)
         await db.commit()
         try:
             await send_verification_email(req.email, token, settings.BACKEND_URL)

@@ -17,9 +17,13 @@ def upgrade():
     op.add_column('users', sa.Column('email_verified', sa.Boolean(), nullable=False, server_default='false'))
     op.add_column('users', sa.Column('verification_token', sa.String(128), nullable=True))
     op.add_column('users', sa.Column('verification_token_expires_at', sa.DateTime(timezone=True), nullable=True))
-    # Legacy email accounts pre-date verification — mark them verified so they
-    # are not locked out after deployment. New accounts start unverified.
-    op.execute("UPDATE users SET email_verified = true WHERE provider = 'email'")
+    # ROLLOUT NOTE: Legacy email accounts are left unverified (email_verified=false
+    # by default). They must re-verify via the standard registration flow, which
+    # resends a token for any existing unverified account. Admins may run a
+    # targeted backfill (e.g. UPDATE users SET email_verified=true WHERE id IN (...))
+    # for a known-trusted allowlist before deploying this migration to production.
+    # No blanket auto-verification is applied to preserve mandatory inbox-ownership
+    # proof as the security baseline for all email accounts.
 
 
 def downgrade():
