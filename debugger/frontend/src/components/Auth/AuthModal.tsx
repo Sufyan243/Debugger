@@ -1,16 +1,26 @@
 import { useState } from "react";
 
-const BASE = `${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/api/v1`;
-const BACKEND = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const BASE = `${import.meta.env.VITE_API_BASE_URL ?? ""}/api/v1`;
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 interface Props {
   onAuth: (token: string, emailOrUser: string, avatar: string) => void;
   onClose: () => void;
 }
 
+function parseError(data: unknown): string {
+  if (typeof data === "string") return data;
+  if (data && typeof data === "object") {
+    const d = data as Record<string, unknown>;
+    if (typeof d.detail === "string") return d.detail;
+    if (Array.isArray(d.detail) && d.detail[0]?.msg) return d.detail[0].msg;
+  }
+  return "Something went wrong";
+}
+
 export default function AuthModal({ onAuth, onClose }: Props) {
-  const [mode, setMode] = useState<"options" | "email">("options");
-  const [isLogin, setIsLogin] = useState(true);
+  const [tab, setTab] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"options" | "email" | "pending">("options");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -21,14 +31,14 @@ export default function AuthModal({ onAuth, onClose }: Props) {
     setError("");
     setLoading(true);
     try {
-      const endpoint = isLogin ? "login" : "register";
-      const res = await fetch(`${BASE}/auth/${endpoint}`, {
+      const res = await fetch(`${BASE}/auth/${tab}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? "Something went wrong");
+      if (!res.ok) throw new Error(parseError(data));
+      if (tab === "register") { setMode("pending"); return; }
       onAuth(data.access_token, data.email ?? email, data.avatar_url ?? "");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -38,116 +48,140 @@ export default function AuthModal({ onAuth, onClose }: Props) {
   }
 
   const overlay: React.CSSProperties = {
-    position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
+    backdropFilter: "blur(4px)",
   };
   const card: React.CSSProperties = {
-    background: "#111827", border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 16, padding: "36px 32px", width: 380, position: "relative",
+    background: "#0f1117", border: "1px solid rgba(255,255,255,0.07)",
+    borderRadius: 20, padding: "40px 36px", width: 400, position: "relative",
+    boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
+  };
+  const input: React.CSSProperties = {
+    width: "100%", background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.08)", color: "#f9fafb",
+    borderRadius: 10, padding: "12px 14px", fontSize: 14, outline: "none",
+    boxSizing: "border-box", transition: "border-color 0.15s",
   };
   const providerBtn: React.CSSProperties = {
-    width: "100%", display: "flex", alignItems: "center", gap: 12,
+    width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
     background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 8, padding: "11px 16px", color: "#f9fafb", fontSize: 14,
+    borderRadius: 10, padding: "12px 16px", color: "#f9fafb", fontSize: 14,
     fontWeight: 500, cursor: "pointer", transition: "background 0.15s",
   };
+
+  if (mode === "pending") {
+    return (
+      <div style={overlay} onClick={onClose}>
+        <div style={card} onClick={e => e.stopPropagation()}>
+          <button onClick={onClose} style={{ position: "absolute", top: 16, right: 18, background: "none", border: "none", color: "#4b5563", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>✕</button>
+          <div style={{ textAlign: "center", padding: "8px 0" }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>📬</div>
+            <p style={{ color: "#f9fafb", fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Check your inbox</p>
+            <p style={{ color: "#6b7280", fontSize: 14, lineHeight: 1.7 }}>
+              We sent a verification link to<br />
+              <strong style={{ color: "#a5b4fc" }}>{email}</strong>
+            </p>
+            <p style={{ color: "#4b5563", fontSize: 13, marginTop: 20 }}>
+              Didn't get it? Check your spam folder, or submit the form again to resend.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "options") {
+    return (
+      <div style={overlay} onClick={onClose}>
+        <div style={card} onClick={e => e.stopPropagation()}>
+          <button onClick={onClose} style={{ position: "absolute", top: 16, right: 18, background: "none", border: "none", color: "#4b5563", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>✕</button>
+
+          <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 22, marginBottom: 6 }}>Welcome to Terra Debugger</h2>
+          <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 28 }}>Sign in to save your progress.</p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button style={providerBtn} onClick={() => window.location.href = `${BACKEND_URL}/api/v1/auth/github`}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
+              <GitHubIcon /> Continue with GitHub
+            </button>
+            <button style={providerBtn} onClick={() => window.location.href = `${BACKEND_URL}/api/v1/auth/google`}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
+              <GoogleIcon /> Continue with Google
+            </button>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "6px 0" }}>
+              <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+              <span style={{ color: "#374151", fontSize: 12 }}>or</span>
+              <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+            </div>
+
+            <button style={{ ...providerBtn, justifyContent: "center" }} onClick={() => setMode("email")}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
+              Continue with Email
+            </button>
+          </div>
+
+          <p style={{ color: "#374151", fontSize: 12, textAlign: "center", marginTop: 24 }}>
+            By continuing you agree to our Terms and Privacy Policy.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={overlay} onClick={onClose}>
       <div style={card} onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} style={{ position: "absolute", top: 14, right: 16, background: "none", border: "none", color: "#6b7280", fontSize: 18, cursor: "pointer" }}>✕</button>
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 18, background: "none", border: "none", color: "#4b5563", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>✕</button>
 
-        {mode === "options" && (
-          <>
-            <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Welcome back</h2>
-            <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 28 }}>Sign in to save your progress and share your wins.</p>
+        <button onClick={() => setMode("options")} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", padding: 0, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+          ← Back
+        </button>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <button
-                style={providerBtn}
-                onClick={() => window.location.href = `${BACKEND}/api/v1/auth/github`}
-                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
-              >
-                <GitHubIcon />
-                Continue with GitHub
-              </button>
+        <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 20, marginBottom: 4 }}>
+          {tab === "login" ? "Sign in" : "Create account"}
+        </h2>
+        <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 24 }}>
+          {tab === "login" ? "Welcome back." : "Start debugging smarter."}
+        </p>
 
-              <button
-                style={providerBtn}
-                onClick={() => window.location.href = `${BACKEND}/api/v1/auth/google`}
-                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
-              >
-                <GoogleIcon />
-                Continue with Google
-              </button>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-                <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
-                <span style={{ color: "#4b5563", fontSize: 12 }}>or</span>
-                <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
-              </div>
-
-              <button
-                style={{ ...providerBtn, justifyContent: "center" }}
-                onClick={() => setMode("email")}
-                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
-              >
-                Continue with Email
-              </button>
-            </div>
-
-            <p style={{ color: "#4b5563", fontSize: 12, textAlign: "center", marginTop: 20 }}>
-              By continuing you agree to our Terms and Privacy Policy.
-            </p>
-          </>
-        )}
-
-        {mode === "email" && (
-          <>
-            <button onClick={() => setMode("options")} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", marginBottom: 16, padding: 0 }}>
-              ← Back
+        <div style={{ display: "flex", marginBottom: 24, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4 }}>
+          {(["login", "register"] as const).map((t) => (
+            <button key={t} onClick={() => { setTab(t); setError(""); }}
+              style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13, transition: "all 0.15s", background: tab === t ? "#1f2937" : "transparent", color: tab === t ? "#f9fafb" : "#4b5563" }}>
+              {t === "login" ? "Sign In" : "Register"}
             </button>
+          ))}
+        </div>
 
-            <div style={{ display: "flex", marginBottom: 24, background: "#0b0f19", borderRadius: 8, padding: 4 }}>
-              {(["Sign In", "Register"] as const).map((label, i) => {
-                const active = i === 0 ? isLogin : !isLogin;
-                return (
-                  <button key={label} onClick={() => setIsLogin(i === 0)}
-                    style={{ flex: 1, padding: "6px 0", borderRadius: 6, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13, background: active ? "#1f2937" : "transparent", color: active ? "#f9fafb" : "#6b7280" }}>
-                    {label}
-                  </button>
-                );
-              })}
+        <form onSubmit={submitEmail} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+            placeholder="Email address" required style={input}
+            onFocus={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)")}
+            onBlur={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")} />
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="Password" required style={input}
+            onFocus={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)")}
+            onBlur={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")} />
+
+          {error && (
+            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "10px 12px", color: "#f87171", fontSize: 13 }}>
+              {error}
             </div>
+          )}
 
-            <form onSubmit={submitEmail} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="Email address"
-                required
-                style={{ background: "#0b0f19", border: "1px solid rgba(255,255,255,0.08)", color: "#f9fafb", borderRadius: 8, padding: "10px 14px", fontSize: 14, outline: "none" }}
-              />
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Password"
-                required
-                style={{ background: "#0b0f19", border: "1px solid rgba(255,255,255,0.08)", color: "#f9fafb", borderRadius: 8, padding: "10px 14px", fontSize: 14, outline: "none" }}
-              />
-              {error && <p style={{ color: "#ef4444", fontSize: 13, margin: 0 }}>{error}</p>}
-              <button type="submit" disabled={loading}
-                style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 600, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1, marginTop: 4 }}>
-                {loading ? "..." : isLogin ? "Sign In" : "Create Account"}
-              </button>
-            </form>
-          </>
-        )}
+          <button type="submit" disabled={loading} style={{
+            background: loading ? "rgba(99,102,241,0.5)" : "#6366f1", color: "#fff", border: "none",
+            borderRadius: 10, padding: "13px 0", fontWeight: 600, fontSize: 14,
+            cursor: loading ? "not-allowed" : "pointer", marginTop: 4, transition: "background 0.15s",
+          }}>
+            {loading ? "Please wait…" : tab === "login" ? "Sign In" : "Create Account"}
+          </button>
+        </form>
       </div>
     </div>
   );

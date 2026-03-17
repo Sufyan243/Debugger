@@ -16,7 +16,7 @@ from app.api.v1.schemas.export import (
     PredictionExportItem,
     HintEventExportItem,
 )
-from app.api.v1.deps.auth_guard import get_current_user_id
+from app.api.v1.deps.auth_guard import get_current_user_id, require_session_owner
 
 router = APIRouter()
 
@@ -26,8 +26,9 @@ async def export_session(
     session_id: UUID,
     format: Literal["json", "csv"] = "json",
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
+    require_session_owner(session_id, user_id)
     # Submissions
     stmt = select(CodeSubmission).where(CodeSubmission.session_id == session_id).order_by(CodeSubmission.timestamp)
     result = await db.execute(stmt)

@@ -16,8 +16,8 @@ from app.api.v1.routes.auth import router as auth_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Run migrations and seed
-    import subprocess
-    subprocess.run(["alembic", "upgrade", "head"], check=True)
+    import sys, subprocess
+    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
     
     from app.db.session import AsyncSessionLocal
     from app.db.seed import run_seed, run_hint_seed

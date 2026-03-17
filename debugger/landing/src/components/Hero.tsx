@@ -1,18 +1,24 @@
+import { useState } from "react"
 import { motion } from "framer-motion"
+import LandingAuthModal from "./LandingAuthModal"
 
-const TOOL_URL = "http://localhost:5173"
+const TOOL_URL = import.meta.env.VITE_TOOL_URL ?? "http://localhost:5173"
 
 export default function Hero() {
+  const [showAuth, setShowAuth] = useState(false)
+
   return (
     <section className="min-h-screen flex flex-col">
       <nav className="flex items-center justify-between px-8 py-5 border-b border-white/5">
-        <span className="text-bright font-bold text-lg tracking-tight">Cognitive Debugger</span>
+        <span className="text-bright font-bold text-lg tracking-tight">Terra Debugger</span>
         <div className="flex items-center gap-8">
           <a href="#how-it-works" className="text-muted hover:text-bright text-sm transition-colors">How it works</a>
-          <a href="https://github.com/Sufyan243/Debugger" target="_blank" rel="noreferrer" className="text-muted hover:text-bright text-sm transition-colors">GitHub</a>
-          <a href={TOOL_URL} target="_blank" rel="noreferrer" className="text-sm font-semibold text-accent border border-accent/30 hover:border-accent/60 px-4 py-1.5 rounded-lg transition-all">
+          <button
+            onClick={() => setShowAuth(true)}
+            className="text-sm font-semibold text-accent border border-accent/30 hover:border-accent/60 px-4 py-1.5 rounded-lg transition-all bg-transparent cursor-pointer"
+          >
             Sign in
-          </a>
+          </button>
         </div>
       </nav>
 
@@ -57,16 +63,17 @@ export default function Hero() {
               <span className="w-2.5 h-2.5 rounded-full bg-danger/60" />
               <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
               <span className="w-2.5 h-2.5 rounded-full bg-success/60" />
-              <span className="ml-3 text-muted/50 text-xs font-mono">cognitive-debugger.app</span>
+              <span className="ml-3 text-muted/50 text-xs font-mono">terra-debugger.app</span>
             </div>
             <img
-              src="/images/exactlythetool.webp"
-              alt="Cognitive Debugger app showing Python editor and error feedback"
+              src="/images/exac.webp"
+              alt="Terra Debugger app showing Python editor and error feedback"
               className="w-full object-cover"
             />
           </div>
         </motion.div>
       </div>
+      {showAuth && <LandingAuthModal onClose={() => setShowAuth(false)} />}
     </section>
   )
 }

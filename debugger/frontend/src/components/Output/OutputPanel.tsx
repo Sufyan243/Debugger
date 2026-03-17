@@ -10,9 +10,11 @@ interface OutputPanelProps {
   state: ExecuteState;
   result: ExecuteData | null;
   prediction: string | null;
+  submissionId: string | null;
+  sessionId: string;
 }
 
-export default function OutputPanel({ state, result, prediction }: OutputPanelProps) {
+export default function OutputPanel({ state, result, prediction, submissionId, sessionId }: OutputPanelProps) {
   if (state === "idle") {
     return (
       <p className="text-[#585b70] text-sm text-center mt-16">
@@ -42,10 +44,13 @@ export default function OutputPanel({ state, result, prediction }: OutputPanelPr
       <ClassifiedError
         classification={result.classification}
         traceback={result.traceback}
+        executionTime={result.execution_time}
         prediction={prediction}
         reflectionQuestion={result.reflection_question ?? undefined}
         contextualHint={result.contextual_hint ?? undefined}
         solution={result.solution ?? undefined}
+        submissionId={submissionId ?? ""}
+        sessionId={sessionId}
       />
     );
   }
@@ -55,6 +60,7 @@ export default function OutputPanel({ state, result, prediction }: OutputPanelPr
       <UnclassifiedError
         traceback={result.traceback}
         stderr={result.stderr}
+        executionTime={result.execution_time}
         prediction={prediction}
         predictionMatch={result.prediction_match ?? null}
         metacognitiveAccuracy={result.metacognitive_accuracy ?? null}

@@ -146,6 +146,9 @@ class User(Base):
     provider_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
+    verification_token: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    verification_token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         sa.UniqueConstraint('provider', 'provider_id', name='uq_users_provider_id'),

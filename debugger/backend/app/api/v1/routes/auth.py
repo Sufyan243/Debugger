@@ -1,17 +1,27 @@
 import httpx
+import re
+import secrets
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator
 from typing import Optional
+from urllib.parse import quote
 from app.db.session import get_db
 from app.db.models import User, AnonSession, CodeSubmission, MetacognitiveMetric, HintEvent
 from app.core.auth import hash_password, verify_password, create_access_token, require_real_user
 from app.core.config import settings
+from app.core.email import send_verification_email
 
 router = APIRouter()
+
+# Short-lived in-memory state store: {nonce: provider}
+# Acceptable for MVP single-instance; replace with Redis for multi-instance prod
+_oauth_states: dict[str, str] = {}
 
 GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -32,9 +42,28 @@ class AuthResponse(BaseModel):
     is_anon: bool = False
 
 
-class EmailAuthRequest(BaseModel):
-    email: str
+class MessageResponse(BaseModel):
+    detail: str
+
+
+class EmailLoginRequest(BaseModel):
+    email: EmailStr
     password: str
+
+
+class EmailRegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+    @validator('password')
+    def password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        if not re.search(r'[a-zA-Z]', v):
+            raise ValueError('Password must contain at least one letter')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one digit')
+        return v
 
 
 class MergeRequest(BaseModel):
@@ -55,33 +84,77 @@ async def create_anon_session(db: AsyncSession = Depends(get_db)):
 
 # --- Email auth ---
 
-@router.post("/auth/register", response_model=AuthResponse, status_code=201)
-async def register(req: EmailAuthRequest, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(User).where(User.email == req.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
+@router.post("/auth/register", response_model=MessageResponse, status_code=201)
+async def register(req: EmailRegisterRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == req.email, User.provider == "email"))
+    existing = result.scalar_one_or_none()
+    if existing:
+        if existing.email_verified:
+            raise HTTPException(status_code=409, detail="Email already registered")
+        # Unverified account — regenerate token and resend
+        token = secrets.token_urlsafe(64)
+        expiry = datetime.now(timezone.utc) + timedelta(minutes=settings.VERIFICATION_TOKEN_EXPIRE_MINUTES)
+        existing.verification_token = token
+        existing.verification_token_expires_at = expiry
+        existing.hashed_password = hash_password(req.password)
+        await db.commit()
+        try:
+            await send_verification_email(req.email, token, settings.BACKEND_URL)
+        except Exception:
+            raise HTTPException(status_code=503, detail="Failed to send verification email. Please try again.")
+        return MessageResponse(detail="Verification email sent. Please check your inbox.")
+    token = secrets.token_urlsafe(64)
+    expiry = datetime.now(timezone.utc) + timedelta(minutes=settings.VERIFICATION_TOKEN_EXPIRE_MINUTES)
     user = User(
         email=req.email,
         hashed_password=hash_password(req.password),
-        provider="email"
+        provider="email",
+        email_verified=False,
+        verification_token=token,
+        verification_token_expires_at=expiry,
     )
     db.add(user)
     try:
         await db.commit()
-        await db.refresh(user)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Email already registered")
-    token = create_access_token(str(user.id))
-    return AuthResponse(access_token=token, email=user.email)
+    try:
+        await send_verification_email(req.email, token, settings.BACKEND_URL)
+    except Exception:
+        await db.delete(user)
+        await db.commit()
+        raise HTTPException(status_code=503, detail="Failed to send verification email. Please try again.")
+    return MessageResponse(detail="Verification email sent. Please check your inbox.")
+
+
+@router.get("/auth/verify-email")
+async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.verification_token == token))
+    user = result.scalar_one_or_none()
+    if not user:
+        return RedirectResponse(f"{settings.FRONTEND_URL}?verified=error")
+    if not user.verification_token_expires_at or user.verification_token_expires_at < datetime.now(timezone.utc):
+        user.verification_token = None
+        user.verification_token_expires_at = None
+        await db.commit()
+        return RedirectResponse(f"{settings.FRONTEND_URL}?verified=expired")
+    user.email_verified = True
+    user.verification_token = None
+    user.verification_token_expires_at = None
+    await db.commit()
+    jwt = create_access_token(str(user.id))
+    return RedirectResponse(f"{settings.FRONTEND_URL}?token={jwt}&email={quote(user.email or '')}&avatar=&verified=1")
 
 
 @router.post("/auth/login", response_model=AuthResponse)
-async def login(req: EmailAuthRequest, db: AsyncSession = Depends(get_db)):
+async def login(req: EmailLoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == req.email, User.provider == "email"))
     user = result.scalar_one_or_none()
     if user is None or not user.hashed_password or not verify_password(req.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail="Email not verified. Please check your inbox.")
     token = create_access_token(str(user.id))
     return AuthResponse(access_token=token, email=user.email, avatar_url=user.avatar_url)
 
@@ -92,16 +165,21 @@ async def login(req: EmailAuthRequest, db: AsyncSession = Depends(get_db)):
 async def github_login():
     if not settings.GITHUB_CLIENT_ID:
         raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = "github"
     url = (
         f"{GITHUB_AUTH_URL}?client_id={settings.GITHUB_CLIENT_ID}"
         f"&scope=user:email"
-        f"&redirect_uri={settings.FRONTEND_URL}/auth/github/callback"
+        f"&redirect_uri={settings.BACKEND_URL}/api/v1/auth/github/callback"
+        f"&state={state}"
     )
     return RedirectResponse(url)
 
 
 @router.get("/auth/github/callback")
-async def github_callback(code: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def github_callback(code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)):
+    if _oauth_states.pop(state, None) != "github":
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
             GITHUB_TOKEN_URL,
@@ -110,7 +188,7 @@ async def github_callback(code: str = Query(...), db: AsyncSession = Depends(get
                 "client_id": settings.GITHUB_CLIENT_ID,
                 "client_secret": settings.GITHUB_CLIENT_SECRET,
                 "code": code,
-                "redirect_uri": f"{settings.FRONTEND_URL}/auth/github/callback",
+                "redirect_uri": f"{settings.BACKEND_URL}/api/v1/auth/github/callback",
             },
         )
         token_data = token_res.json()
@@ -135,7 +213,7 @@ async def github_callback(code: str = Query(...), db: AsyncSession = Depends(get
 
     user = await _get_or_create_oauth_user(db, "github", provider_id, email, username, avatar_url)
     jwt = create_access_token(str(user.id))
-    return RedirectResponse(f"{settings.FRONTEND_URL}?token={jwt}&email={email or ''}&avatar={avatar_url or ''}")
+    return RedirectResponse(f"{settings.FRONTEND_URL}?token={jwt}&email={quote(email or '')}&avatar={quote(avatar_url or '')}")
 
 
 # --- Google OAuth ---
@@ -144,17 +222,22 @@ async def github_callback(code: str = Query(...), db: AsyncSession = Depends(get
 async def google_login():
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google OAuth not configured")
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = "google"
     params = (
         f"?client_id={settings.GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={settings.FRONTEND_URL}/auth/google/callback"
+        f"&redirect_uri={settings.BACKEND_URL}/api/v1/auth/google/callback"
         f"&response_type=code"
         f"&scope=openid email profile"
+        f"&state={state}"
     )
     return RedirectResponse(GOOGLE_AUTH_URL + params)
 
 
 @router.get("/auth/google/callback")
-async def google_callback(code: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def google_callback(code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)):
+    if _oauth_states.pop(state, None) != "google":
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
             GOOGLE_TOKEN_URL,
@@ -162,7 +245,7 @@ async def google_callback(code: str = Query(...), db: AsyncSession = Depends(get
                 "code": code,
                 "client_id": settings.GOOGLE_CLIENT_ID,
                 "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                "redirect_uri": f"{settings.FRONTEND_URL}/auth/google/callback",
+                "redirect_uri": f"{settings.BACKEND_URL}/api/v1/auth/google/callback",
                 "grant_type": "authorization_code",
             },
         )
@@ -184,7 +267,7 @@ async def google_callback(code: str = Query(...), db: AsyncSession = Depends(get
 
     user = await _get_or_create_oauth_user(db, "google", provider_id, email, username, avatar_url)
     jwt = create_access_token(str(user.id))
-    return RedirectResponse(f"{settings.FRONTEND_URL}?token={jwt}&email={email or ''}&avatar={avatar_url or ''}")
+    return RedirectResponse(f"{settings.FRONTEND_URL}?token={jwt}&email={quote(email or '')}&avatar={quote(avatar_url or '')}")
 
 
 # --- Session merge ---

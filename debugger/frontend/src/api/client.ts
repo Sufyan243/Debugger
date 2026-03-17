@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export interface ExecuteRequest {
   code: string;
@@ -63,13 +63,23 @@ export async function postExecute(req: ExecuteRequest): Promise<ExecuteResponse>
   return await response.json();
 }
 
-export async function postReflect(submissionId: string, responseText: string, sessionId: string) {
+export async function postReflect(submissionId: string, responseText: string, sessionId: string, authToken: string) {
   const response = await fetch(`${API_BASE}/api/v1/reflect`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${authToken}`,
+    },
     body: JSON.stringify({ submission_id: submissionId, response_text: responseText, session_id: sessionId }),
   });
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  if (!response.ok) {
+    let detail = `HTTP error! status: ${response.status}`;
+    try {
+      const body = await response.json();
+      if (body.detail) detail = body.detail;
+    } catch {}
+    throw new Error(detail);
+  }
   return await response.json();
 }
 

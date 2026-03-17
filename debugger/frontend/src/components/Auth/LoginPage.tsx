@@ -1,23 +1,14 @@
 import { useState } from "react";
 
 interface Props {
-  onAuth: (token: string, username: string, userId: string) => void;
+  onAuth: (token: string, email: string, avatar: string) => void;
 }
 
-function extractUserId(token: string): string {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.sub as string;
-  } catch {
-    return crypto.randomUUID();
-  }
-}
-
-const BASE = `${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/api/v1`;
+const BASE = "/api/v1";
 
 export default function LoginPage({ onAuth }: Props) {
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [username, setUsername] = useState("");
+  const [mode, setMode] = useState<"login" | "register" | "pending">("login");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -27,14 +18,19 @@ export default function LoginPage({ onAuth }: Props) {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${BASE}/auth/${mode}`, {
+      const endpoint = mode === "login" ? "login" : "register";
+      const res = await fetch(`${BASE}/auth/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? "Something went wrong");
-      onAuth(data.access_token, data.username, extractUserId(data.access_token));
+      if (mode === "register") {
+        setMode("pending");
+        return;
+      }
+      onAuth(data.access_token, data.email ?? email, data.avatar_url ?? "");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
@@ -42,10 +38,25 @@ export default function LoginPage({ onAuth }: Props) {
     }
   }
 
+  if (mode === "pending") {
+    return (
+      <div style={{ background: "#1e1e2e", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ background: "#181825", border: "1px solid #313244", borderRadius: 12, padding: "40px 36px", width: 360, textAlign: "center" }}>
+          <div style={{ color: "#cdd6f4", fontWeight: 700, fontSize: 20, marginBottom: 24 }}>⬡ Terra Debugger</div>
+          <p style={{ color: "#cdd6f4", fontWeight: 600, marginBottom: 12 }}>Check your inbox</p>
+          <p style={{ color: "#585b70", fontSize: 14, lineHeight: 1.6 }}>
+            We've sent a verification link to <strong style={{ color: "#cdd6f4" }}>{email}</strong>.<br />
+            Click the link to activate your account.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ background: "#1e1e2e", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ background: "#181825", border: "1px solid #313244", borderRadius: 12, padding: "40px 36px", width: 360 }}>
-        <div style={{ color: "#cdd6f4", fontWeight: 700, fontSize: 20, marginBottom: 24, textAlign: "center" }}>⬡ Cognitive Debugger</div>
+        <div style={{ color: "#cdd6f4", fontWeight: 700, fontSize: 20, marginBottom: 24, textAlign: "center" }}>⬡ Terra Debugger</div>
 
         <div style={{ display: "flex", marginBottom: 24, background: "#1e1e2e", borderRadius: 8, padding: 4 }}>
           {(["login", "register"] as const).map((m) => (
@@ -57,9 +68,10 @@ export default function LoginPage({ onAuth }: Props) {
 
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Username"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email address"
             required
             style={{ background: "#1e1e2e", border: "1px solid #313244", color: "#cdd6f4", borderRadius: 6, padding: "10px 12px", fontSize: 14 }}
           />

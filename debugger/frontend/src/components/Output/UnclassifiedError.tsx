@@ -1,16 +1,18 @@
 interface UnclassifiedErrorProps {
   traceback: string;
   stderr: string;
+  executionTime: number;
   prediction: string | null;
   predictionMatch: boolean | null;
   metacognitiveAccuracy: number | null;
 }
 
-export default function UnclassifiedError({ traceback, stderr, prediction, predictionMatch, metacognitiveAccuracy }: UnclassifiedErrorProps) {
+export default function UnclassifiedError({ traceback, stderr, executionTime, prediction, predictionMatch, metacognitiveAccuracy }: UnclassifiedErrorProps) {
   const actualOutput = traceback || stderr;
   return (
     <div>
       <div style={{ background: "#11111b", border: "1px solid #f38ba8", borderRadius: "8px", padding: "12px", marginBottom: "12px" }}>
+        <div style={{ color: "#585b70", fontSize: "11px", textAlign: "right", marginBottom: "6px" }}>Failed in {executionTime.toFixed(2)}s</div>
         <pre style={{ fontFamily: "monospace", color: "#f38ba8", whiteSpace: "pre-wrap", margin: 0, fontSize: "13px" }}>
           {traceback}
         </pre>

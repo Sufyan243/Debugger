@@ -44,6 +44,8 @@ TYPO_CLASSIFICATION = ClassificationResult("NameError", "Typo / Spelling", "Atte
 TAXONOMY = {
     "NameError": ClassificationResult("NameError", "Variable Initialization", "State awareness"),
     "TypeError": ClassificationResult("TypeError", "Data Type Compatibility", "Type reasoning"),
+    "AttributeError": ClassificationResult("AttributeError", "Object Attributes", "Object model reasoning"),
+    "ValueError": ClassificationResult("ValueError", "Value Validity", "Input validation reasoning"),
     "IndexError": ClassificationResult("IndexError", "List Management", "Boundary reasoning"),
     "KeyError": ClassificationResult("KeyError", "Dictionary Usage", "Mapping reasoning"),
     "SyntaxError": ClassificationResult("SyntaxError", "Syntax", "Code structure"),
@@ -54,6 +56,8 @@ REFLECTION_QUESTIONS = {
     "Typo / Spelling": "Look closely at the function or variable name — does it match the correct Python spelling?",
     "Variable Initialization": "Where in your code should the variable have been created before it was used?",
     "Data Type Compatibility": "What types of values are you trying to combine, and do they work together in Python?",
+    "Object Attributes": "Does the object you're calling this method or attribute on actually have it? What type is it?",
+    "Value Validity": "What value are you passing in, and does it make sense for what the function expects?",
     "List Management": "What is the length of your list, and which index are you trying to access?",
     "Dictionary Usage": "What keys does your dictionary actually contain, and which one were you trying to access?",
     "Syntax": "Check the syntax on the highlighted line. Is something missing or misplaced?",
@@ -70,6 +74,16 @@ CONTEXTUAL_HINTS = {
         hint_text="You're trying to combine incompatible data types.",
         affected_line=line,
         explanation=f"Check the types of values you're working with. {msg}"
+    ),
+    "AttributeError": lambda msg, line: ContextualHint(
+        hint_text="You're accessing an attribute or method that doesn't exist on this object.",
+        affected_line=line,
+        explanation=f"Check the type of your variable and what methods it actually has. {msg}"
+    ),
+    "ValueError": lambda msg, line: ContextualHint(
+        hint_text="You passed a value that the function can't work with.",
+        affected_line=line,
+        explanation=f"The type is correct but the value itself is invalid. {msg}"
     ),
     "IndexError": lambda msg, line: ContextualHint(
         hint_text="You're trying to access an index that doesn't exist.",
@@ -98,6 +112,16 @@ SOLUTION_TEMPLATES = {
         solution_code="# Convert types to match\nresult = str(5) + ' items'  # or int('5') + 10",
         explanation="Make sure you're combining compatible types.",
         changes_needed=["Convert one value to match the other's type using str(), int(), or float()"]
+    ),
+    "AttributeError": lambda msg, user_code: SolutionData(
+        solution_code="# Check the type of your variable first\nprint(type(my_var))\n# Then use a method that actually exists on it",
+        explanation="The object doesn't have the attribute or method you called.",
+        changes_needed=["Verify the variable's type", "Check the correct method name in Python docs"]
+    ),
+    "ValueError": lambda msg, user_code: SolutionData(
+        solution_code="# Validate the value before passing it\nif value.isdigit():\n    result = int(value)\nelse:\n    print('Not a valid number')",
+        explanation="The value you passed is the right type but an invalid value for that operation.",
+        changes_needed=["Validate input before converting", "Add a check for edge cases like empty strings"]
     ),
     "IndexError": lambda msg, user_code: SolutionData(
         solution_code="# Check list length before accessing\nif index < len(my_list):\n    print(my_list[index])",

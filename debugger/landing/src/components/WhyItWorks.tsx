@@ -39,20 +39,6 @@ export default function WhyItWorks() {
               ))}
             </div>
           </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: 16 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-            className="flex-1 rounded-xl overflow-hidden border border-white/10 shadow-xl"
-          >
-            <img
-              src="/images/Gemini_Generated_Image_c1z4n0c1z4n0c1z4.webp"
-              alt="Developer focused at laptop with code on screen"
-              className="w-full object-cover h-72 lg:h-80"
-            />
-          </motion.div>
         </div>
 
         <motion.div

@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { postReflect } from "../../api/client";
+
+const JWT_KEY = "debugger_jwt";
 
 interface ReflectionGateProps {
   submissionId: string;
@@ -11,16 +14,18 @@ export default function ReflectionGate({ submissionId, sessionId, question, onUn
   const [text, setText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
+    setError(null);
     try {
-      const { postReflect } = await import("../../api/client");
-      await postReflect(submissionId, text, sessionId);
+      const authToken = localStorage.getItem(JWT_KEY) ?? "";
+      await postReflect(submissionId, text, sessionId, authToken);
       setSubmitted(true);
       onUnlocked();
     } catch (e) {
-      console.error(e);
+      setError(e instanceof Error ? e.message : "Submission failed. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -39,8 +44,13 @@ export default function ReflectionGate({ submissionId, sessionId, question, onUn
         onChange={(e) => setText(e.target.value)}
         disabled={submitted}
         placeholder="Type your thoughts here…"
-        style={{ width: "100%", background: "#1e1e2e", border: "1px solid #45475a", color: "#cdd6f4", borderRadius: "6px", padding: "8px 10px", fontSize: "13px", resize: "vertical", minHeight: "60px", marginBottom: "8px" }}
+        style={{ width: "100%", background: "#1e1e2e", border: `1px solid ${error ? "#f38ba8" : "#45475a"}`, color: "#cdd6f4", borderRadius: "6px", padding: "8px 10px", fontSize: "13px", resize: "vertical", minHeight: "60px", marginBottom: "8px" }}
       />
+      {error && (
+        <div style={{ color: "#f38ba8", fontSize: "12px", marginBottom: "8px" }}>
+          ✗ {error}
+        </div>
+      )}
       {!submitted ? (
         <button
           onClick={handleSubmit}
@@ -48,7 +58,7 @@ export default function ReflectionGate({ submissionId, sessionId, question, onUn
           style={{ background: "#cba6f7", color: "#1e1e2e", border: "none", borderRadius: "5px", padding: "7px 16px", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
           className="disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Submit Reflection
+          {isSubmitting ? "Submitting…" : "Submit Reflection"}
         </button>
       ) : (
         <div style={{ color: "#a6e3a1", fontSize: "12px", marginTop: "6px" }}>

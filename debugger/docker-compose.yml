@@ -11,6 +11,10 @@ services:
       POSTGRES_PASSWORD: debugger
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U debugger -d debugger"]
+      interval: 5s
+      retries: 10
 
   sandbox-puller:
     image: docker:cli
@@ -26,8 +30,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - sandbox-puller
+      postgres:
+        condition: service_healthy
+      sandbox-puller:
+        condition: service_started
     env_file:
       - .env
     volumes:
