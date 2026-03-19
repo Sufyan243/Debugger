@@ -4,12 +4,18 @@ from sqlalchemy import select
 from app.api.v1.schemas.hint import HintRequest, HintResponse
 from app.db.session import get_db
 from app.db.models import CodeSubmission, ExecutionResult, ErrorRecord, HintSequence
+from app.api.v1.deps.auth_guard import get_current_user_id, require_session_owner
 
 router = APIRouter()
 
 
 @router.post("/hint", response_model=HintResponse)
-async def hint_handler(request: HintRequest, db: AsyncSession = Depends(get_db)) -> HintResponse:
+async def hint_handler(
+    request: HintRequest,
+    db: AsyncSession = Depends(get_db),
+    caller_id: str = Depends(get_current_user_id),
+) -> HintResponse:
+    require_session_owner(request.session_id, caller_id)
     # Validate submission ownership
     stmt = select(CodeSubmission).where(
         CodeSubmission.id == request.submission_id,

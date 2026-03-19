@@ -151,6 +151,10 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   function bootstrapAnon() {
+    // Guard: if a valid token already exists, don't overwrite it
+    const existing = localStorage.getItem(JWT_KEY);
+    if (existing && isTokenValid(existing)) return;
+
     anonReqVersion.current += 1;
     const version = anonReqVersion.current;
 
@@ -327,7 +331,7 @@ export default function App() {
                   <div style={{ width: 14, height: 14, background: "#fff", borderRadius: "50%", position: "absolute", top: 2, left: predictionEnabled ? 18 : 2, transition: "left 0.2s" }}></div>
                 </div>
               </div>
-              <RunButton onClick={() => runCode(code, sessionId, predictionEnabled && prediction.trim() ? prediction : null)} disabled={isExecuting || !sessionId} />
+              <RunButton onClick={() => runCode(code, sessionId, jwt, predictionEnabled && prediction.trim() ? prediction : null)} disabled={isExecuting || !sessionId} />
             </div>
             {predictionEnabled && (
               <div style={{ background: "#181825", borderTop: "1px solid #313244", padding: "12px 16px" }}>
@@ -353,7 +357,7 @@ export default function App() {
               <span style={{ color: "#cdd6f4", fontWeight: 600 }}>Output</span>
             </div>
             <div style={{ flex: 1, padding: 16, overflow: "auto" }}>
-              <OutputPanel state={state} result={result} prediction={submittedPrediction} submissionId={result?.submission_id ?? null} sessionId={sessionId} />
+              <OutputPanel state={state} result={result} prediction={submittedPrediction} submissionId={result?.submission_id ?? null} sessionId={sessionId} authToken={jwt} />
             </div>
           </div>
         </div>

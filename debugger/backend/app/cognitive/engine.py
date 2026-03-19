@@ -90,6 +90,11 @@ CONTEXTUAL_HINTS = {
         affected_line=line,
         explanation="Lists are zero-indexed. If your list has 3 items, valid indices are 0, 1, 2."
     ),
+    "KeyError": lambda msg, line: ContextualHint(
+        hint_text="The key you're looking for doesn't exist in the dictionary.",
+        affected_line=line,
+        explanation=f"Check what keys your dictionary actually contains before accessing them. {msg}"
+    ),
     "SyntaxError": lambda msg, line: ContextualHint(
         hint_text="There's a syntax error in your code.",
         affected_line=line,
@@ -134,34 +139,35 @@ SOLUTION_TEMPLATES = {
 def parse_exception(traceback: str) -> Optional[ParsedError]:
     if not traceback.strip():
         return None
-    
+
     line_number = None
     matches = list(re.finditer(r'File ".+", line (\d+)', traceback))
     if matches:
         line_number = int(matches[-1].group(1))
-    
-    lines = [line for line in traceback.split("\n") if line.strip()]
-    if not lines:
-        return None
-    
-    last_line = lines[-1]
-    
-    match = re.match(r"^(\w+(?:\.\w+)*): (.+)$", last_line)
-    if match:
-        return ParsedError(
-            exception_type=match.group(1),
-            message=match.group(2),
-            line_number=line_number
-        )
-    
-    match = re.match(r"^(\w+(?:\.\w+)*)$", last_line)
-    if match:
-        return ParsedError(
-            exception_type=match.group(1),
-            message="",
-            line_number=line_number
-        )
-    
+
+    # Scan lines in reverse to find the first line matching "ExceptionType: message"
+    # or bare "ExceptionType". This handles Python 3.11+ SyntaxError format where
+    # caret/source lines appear after the exception line.
+    lines = traceback.split("\n")
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        match = re.match(r"^(\w+(?:\.\w+)*): (.+)$", line)
+        if match:
+            return ParsedError(
+                exception_type=match.group(1),
+                message=match.group(2),
+                line_number=line_number,
+            )
+        match = re.match(r"^(\w+(?:\.\w+)*)$", line)
+        if match and match.group(1)[0].isupper():
+            return ParsedError(
+                exception_type=match.group(1),
+                message="",
+                line_number=line_number,
+            )
+
     return None
 
 

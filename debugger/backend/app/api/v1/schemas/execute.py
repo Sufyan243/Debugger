@@ -45,7 +45,6 @@ class ExecuteData(BaseModel):
     classification: Optional[ClassificationData] = None
     reflection_question: Optional[str] = None
     contextual_hint: Optional[ContextualHint] = None
-    solution: Optional[SolutionData] = None
     prediction_match: Optional[bool] = None
     metacognitive_accuracy: Optional[float] = None
     failed_attempts: Optional[int] = None

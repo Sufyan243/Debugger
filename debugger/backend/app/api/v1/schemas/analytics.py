@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
+from datetime import datetime
 
 
 class ConceptStatItem(BaseModel):
@@ -31,3 +32,17 @@ class MetacognitiveResponse(BaseModel):
     accuracy_score: float
     total_predictions: int
     correct_predictions: int
+
+
+class SessionHistoryItem(BaseModel):
+    submission_id: UUID
+    timestamp: datetime
+    code_snippet: str          # first 120 chars of code_text
+    success: bool
+    exception_type: Optional[str] = None
+    concept_category: Optional[str] = None
+
+
+class SessionHistoryResponse(BaseModel):
+    items: List[SessionHistoryItem]
+    total: int

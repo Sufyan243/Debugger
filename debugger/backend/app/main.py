@@ -6,6 +6,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
+from app.core.redis_client import close_redis
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.execute import router as execute_router
 from app.api.v1.routes.reflect import router as reflect_router
@@ -21,17 +22,15 @@ limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Run migrations and seed
-    import sys, subprocess
-    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
-    
+    # Migrations must be run via the pre-start script (scripts/migrate.sh)
+    # or an init container — NOT here, to avoid blocking the event loop.
     from app.db.session import AsyncSessionLocal
     from app.db.seed import run_seed, run_hint_seed
     async with AsyncSessionLocal() as db:
         await run_seed(db)
         await run_hint_seed(db)
-    
     yield
+    await close_redis()
 
 
 app = FastAPI(title="Cognitive Debugger API", version="1.0.0", lifespan=lifespan)

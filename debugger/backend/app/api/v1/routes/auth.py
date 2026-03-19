@@ -4,7 +4,6 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
-from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,29 +17,13 @@ from app.db.models import User, AnonSession, CodeSubmission, MetacognitiveMetric
 from app.core.auth import hash_password, verify_password, create_access_token, require_real_user
 from app.core.config import settings
 from app.core.email import send_verification_email
+from app.core.redis_client import get_redis
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
-# Short-lived in-memory state store: {nonce: provider}
-# Acceptable for MVP single-instance; replace with Redis for multi-instance prod
-_oauth_states: dict[str, str] = {}
-
-# One-time auth codes: {code: (jwt, issued_at)}  — consumed on first exchange, expire after 5 min
-_CODE_TTL_SECONDS = 300
-_pending_codes: dict[str, tuple[str, datetime]] = {}
-
-
-def _issue_auth_code(jwt: str) -> str:
-    """Store a new one-time code and evict any expired entries."""
-    now = datetime.now(timezone.utc)
-    expired = [c for c, (_, issued) in _pending_codes.items()
-               if (now - issued).total_seconds() > _CODE_TTL_SECONDS]
-    for c in expired:
-        del _pending_codes[c]
-    code = secrets.token_urlsafe(32)
-    _pending_codes[code] = (jwt, now)
-    return code
+_OAUTH_STATE_TTL = 600   # 10 min
+_CODE_TTL_SECONDS = 300  # 5 min one-time auth code
 
 GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -51,6 +34,47 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USER_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
+
+# ---------------------------------------------------------------------------
+# Redis helpers for OAuth state and one-time auth codes
+# ---------------------------------------------------------------------------
+
+async def _store_oauth_state(state: str, provider: str) -> None:
+    r = get_redis()
+    await r.set(f"oauth_state:{state}", provider, ex=_OAUTH_STATE_TTL)
+
+
+async def _consume_oauth_state(state: str) -> Optional[str]:
+    """Atomically get-and-delete the OAuth state. Returns provider or None."""
+    r = get_redis()
+    pipe = r.pipeline()
+    await pipe.get(f"oauth_state:{state}")
+    await pipe.delete(f"oauth_state:{state}")
+    results = await pipe.execute()
+    return results[0]
+
+
+async def _issue_auth_code(jwt: str) -> str:
+    """Store a one-time code in Redis with TTL. Returns the code."""
+    r = get_redis()
+    code = secrets.token_urlsafe(32)
+    await r.set(f"auth_code:{code}", jwt, ex=_CODE_TTL_SECONDS)
+    return code
+
+
+async def _consume_auth_code(code: str) -> Optional[str]:
+    """Atomically get-and-delete the auth code. Returns JWT or None."""
+    r = get_redis()
+    pipe = r.pipeline()
+    await pipe.get(f"auth_code:{code}")
+    await pipe.delete(f"auth_code:{code}")
+    results = await pipe.execute()
+    return results[0]
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
 
 class AuthResponse(BaseModel):
     access_token: str
@@ -91,7 +115,13 @@ class MergeRequest(BaseModel):
     anon_id: str
 
 
-# --- Anonymous session ---
+class CodeExchangeRequest(BaseModel):
+    code: str
+
+
+# ---------------------------------------------------------------------------
+# Anonymous session
+# ---------------------------------------------------------------------------
 
 @router.post("/auth/anon", response_model=AuthResponse, status_code=201)
 @limiter.limit("20/minute")
@@ -104,7 +134,9 @@ async def create_anon_session(request: Request, db: AsyncSession = Depends(get_d
     return AuthResponse(access_token=token, is_anon=True)
 
 
-# --- Email auth ---
+# ---------------------------------------------------------------------------
+# Email auth
+# ---------------------------------------------------------------------------
 
 @router.post("/auth/register", response_model=MessageResponse, status_code=201)
 @limiter.limit("5/minute")
@@ -114,8 +146,7 @@ async def register(request: Request, req: EmailRegisterRequest, db: AsyncSession
     if existing:
         if existing.email_verified:
             raise HTTPException(status_code=409, detail="Email already registered")
-        # Unverified account — regenerate token and resend; password unchanged
-        # until inbox ownership is proven to prevent pre-verification takeover.
+        # Unverified — regenerate token and resend without touching password
         token = secrets.token_urlsafe(64)
         expiry = datetime.now(timezone.utc) + timedelta(minutes=settings.VERIFICATION_TOKEN_EXPIRE_MINUTES)
         existing.verification_token = token
@@ -126,6 +157,7 @@ async def register(request: Request, req: EmailRegisterRequest, db: AsyncSession
         except Exception:
             raise HTTPException(status_code=503, detail="Failed to send verification email. Please try again.")
         return MessageResponse(detail="Verification email sent. Please check your inbox.")
+
     token = secrets.token_urlsafe(64)
     expiry = datetime.now(timezone.utc) + timedelta(minutes=settings.VERIFICATION_TOKEN_EXPIRE_MINUTES)
     user = User(
@@ -142,11 +174,13 @@ async def register(request: Request, req: EmailRegisterRequest, db: AsyncSession
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Email already registered")
+
+    # Send email AFTER commit. On failure, leave the row intact — the resend
+    # path above handles re-sending to existing unverified accounts, so the
+    # user can simply submit the form again. No delete needed.
     try:
         await send_verification_email(req.email, token, settings.BACKEND_URL)
     except Exception:
-        await db.delete(user)
-        await db.commit()
         raise HTTPException(status_code=503, detail="Failed to send verification email. Please try again.")
     return MessageResponse(detail="Verification email sent. Please check your inbox.")
 
@@ -167,7 +201,7 @@ async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_d
     user.verification_token_expires_at = None
     await db.commit()
     jwt = create_access_token(str(user.id))
-    auth_code = _issue_auth_code(jwt)
+    auth_code = await _issue_auth_code(jwt)
     return RedirectResponse(f"{settings.FRONTEND_URL}?code={auth_code}&email={quote(user.email or '')}&avatar=&verified=1")
 
 
@@ -184,14 +218,16 @@ async def login(request: Request, req: EmailLoginRequest, db: AsyncSession = Dep
     return AuthResponse(access_token=token, email=user.email, avatar_url=user.avatar_url)
 
 
-# --- GitHub OAuth ---
+# ---------------------------------------------------------------------------
+# GitHub OAuth
+# ---------------------------------------------------------------------------
 
 @router.get("/auth/github")
 async def github_login():
     if not settings.GITHUB_CLIENT_ID:
         raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
     state = secrets.token_urlsafe(32)
-    _oauth_states[state] = "github"
+    await _store_oauth_state(state, "github")
     url = (
         f"{GITHUB_AUTH_URL}?client_id={settings.GITHUB_CLIENT_ID}"
         f"&scope=user:email"
@@ -203,8 +239,10 @@ async def github_login():
 
 @router.get("/auth/github/callback")
 async def github_callback(code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)):
-    if _oauth_states.pop(state, None) != "github":
+    provider = await _consume_oauth_state(state)
+    if provider != "github":
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
             GITHUB_TOKEN_URL,
@@ -232,24 +270,32 @@ async def github_callback(code: str = Query(...), state: str = Query(...), db: A
             primary = next((e for e in emails if e.get("primary") and e.get("verified")), None)
             email = primary["email"] if primary else None
 
+    # Guard: GitHub accounts without any verified email cannot log in
+    if not email:
+        return RedirectResponse(
+            f"{settings.FRONTEND_URL}?verified=error&error=no_email"
+        )
+
     provider_id = str(gh_user["id"])
     avatar_url = gh_user.get("avatar_url")
     username = gh_user.get("login")
 
     user = await _get_or_create_oauth_user(db, "github", provider_id, email, username, avatar_url)
     jwt = create_access_token(str(user.id))
-    auth_code = _issue_auth_code(jwt)
-    return RedirectResponse(f"{settings.FRONTEND_URL}?code={auth_code}&email={quote(email or '')}&avatar={quote(avatar_url or '')}")
+    auth_code = await _issue_auth_code(jwt)
+    return RedirectResponse(f"{settings.FRONTEND_URL}?code={auth_code}&email={quote(email)}&avatar={quote(avatar_url or '')}")
 
 
-# --- Google OAuth ---
+# ---------------------------------------------------------------------------
+# Google OAuth
+# ---------------------------------------------------------------------------
 
 @router.get("/auth/google")
 async def google_login():
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google OAuth not configured")
     state = secrets.token_urlsafe(32)
-    _oauth_states[state] = "google"
+    await _store_oauth_state(state, "google")
     params = (
         f"?client_id={settings.GOOGLE_CLIENT_ID}"
         f"&redirect_uri={settings.BACKEND_URL}/api/v1/auth/google/callback"
@@ -262,8 +308,10 @@ async def google_login():
 
 @router.get("/auth/google/callback")
 async def google_callback(code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)):
-    if _oauth_states.pop(state, None) != "google":
+    provider = await _consume_oauth_state(state)
+    if provider != "google":
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
             GOOGLE_TOKEN_URL,
@@ -293,30 +341,26 @@ async def google_callback(code: str = Query(...), state: str = Query(...), db: A
 
     user = await _get_or_create_oauth_user(db, "google", provider_id, email, username, avatar_url)
     jwt = create_access_token(str(user.id))
-    auth_code = _issue_auth_code(jwt)
+    auth_code = await _issue_auth_code(jwt)
     return RedirectResponse(f"{settings.FRONTEND_URL}?code={auth_code}&email={quote(email or '')}&avatar={quote(avatar_url or '')}")
 
 
-# --- OAuth code exchange ---
-
-class CodeExchangeRequest(BaseModel):
-    code: str
-
+# ---------------------------------------------------------------------------
+# OAuth code exchange
+# ---------------------------------------------------------------------------
 
 @router.post("/auth/exchange", response_model=AuthResponse)
 async def exchange_code(req: CodeExchangeRequest):
     """Consume a one-time auth code and return the JWT. Code is deleted on first use."""
-    now = datetime.now(timezone.utc)
-    entry = _pending_codes.pop(req.code, None)
-    if not entry:
-        raise HTTPException(status_code=400, detail="Invalid or expired auth code")
-    jwt, issued_at = entry
-    if (now - issued_at).total_seconds() > _CODE_TTL_SECONDS:
+    jwt = await _consume_auth_code(req.code)
+    if not jwt:
         raise HTTPException(status_code=400, detail="Invalid or expired auth code")
     return AuthResponse(access_token=jwt)
 
 
-# --- Session merge ---
+# ---------------------------------------------------------------------------
+# Session merge
+# ---------------------------------------------------------------------------
 
 @router.post("/auth/merge")
 async def merge_anon_session(
@@ -334,7 +378,6 @@ async def merge_anon_session(
     if not anon or anon.merged_into is not None:
         return {"merged": False, "reason": "already merged or not found"}
 
-    # Reassign code submissions from anon session to user's session
     await db.execute(
         CodeSubmission.__table__.update()
         .where(CodeSubmission.session_id == anon_uuid)
@@ -356,7 +399,9 @@ async def merge_anon_session(
     return {"merged": True}
 
 
-# --- Helper ---
+# ---------------------------------------------------------------------------
+# Helper — safe OAuth user upsert (no cross-provider email merge)
+# ---------------------------------------------------------------------------
 
 async def _get_or_create_oauth_user(
     db: AsyncSession,
@@ -366,6 +411,7 @@ async def _get_or_create_oauth_user(
     username: Optional[str],
     avatar_url: Optional[str],
 ) -> User:
+    # 1. Exact provider+id match — normal returning user
     result = await db.execute(
         select(User).where(User.provider == provider, User.provider_id == provider_id)
     )
@@ -375,16 +421,19 @@ async def _get_or_create_oauth_user(
         await db.commit()
         return user
 
-    # Check if email already exists under different provider
+    # 2. Email exists under a DIFFERENT provider — refuse silent merge to
+    #    prevent account takeover. Return 409 so the frontend can show a
+    #    "use your original sign-in method" message.
     if email:
         result = await db.execute(select(User).where(User.email == email))
         existing = result.scalar_one_or_none()
         if existing:
-            existing.provider_id = provider_id
-            existing.avatar_url = avatar_url
-            await db.commit()
-            return existing
+            raise HTTPException(
+                status_code=409,
+                detail=f"An account with this email already exists. Please sign in with your original method ({existing.provider})."
+            )
 
+    # 3. New user
     user = User(
         email=email,
         username=username,

@@ -2,17 +2,12 @@ import { useState } from "react";
 import { ClassificationData, postHint } from "../../api/client";
 import HintTiers from "./HintTiers";
 import ReflectionGate from "./ReflectionGate";
+import SolutionGate from "./SolutionGate";
 
 interface ContextualHint {
   hint_text: string;
   affected_line: number | null;
   explanation: string;
-}
-
-interface SolutionData {
-  solution_code: string;
-  explanation: string;
-  changes_needed: string[];
 }
 
 interface ClassifiedErrorProps {
@@ -22,9 +17,9 @@ interface ClassifiedErrorProps {
   prediction: string | null;
   reflectionQuestion?: string;
   contextualHint?: ContextualHint;
-  solution?: SolutionData;
   submissionId: string;
   sessionId: string;
+  authToken: string;
   failedAttempts?: number | null;
 }
 
@@ -35,16 +30,14 @@ export default function ClassifiedError({
   prediction,
   reflectionQuestion,
   contextualHint,
-  solution,
   submissionId,
   sessionId,
+  authToken,
   failedAttempts,
 }: ClassifiedErrorProps) {
   const [expanded, setExpanded] = useState(false);
   const [hintUnlocked, setHintUnlocked] = useState(false);
-  const [showSolution, setShowSolution] = useState(false);
 
-  // Determine initial tier from failed_attempts: ≤2 → tier 1, 3-4 → tier 2, 5+ → tier 3
   const initialTier = !failedAttempts || failedAttempts <= 2 ? 1 : failedAttempts <= 4 ? 2 : 3;
   const [hints, setHints] = useState<Array<{ tier: number; tier_name: string; hint_text: string }>>(
     contextualHint
@@ -55,7 +48,7 @@ export default function ClassifiedError({
 
   async function handleUnlockNext(tier: number) {
     try {
-      const data = await postHint(submissionId, tier, sessionId);
+      const data = await postHint(submissionId, tier, sessionId, authToken);
       setHints(prev => {
         if (prev.some(h => h.tier === tier)) return prev;
         return [...prev, { tier: data.tier, tier_name: data.tier_name, hint_text: data.hint_text }]
@@ -107,17 +100,21 @@ export default function ClassifiedError({
         </div>
       )}
 
-      {(hintUnlocked || !reflectionQuestion) && hints.length > 0 && !showSolution && (
+      {(hintUnlocked || !reflectionQuestion) && hints.length > 0 && (
         <HintTiers
           hints={hints}
           unlockedTiers={unlockedTiers}
           onUnlockNext={handleUnlockNext}
-          onShowSolution={() => setShowSolution(true)}
         />
       )}
 
-      {(hintUnlocked || !reflectionQuestion) && showSolution && solution && (
-        <SolutionPanel solution={solution} />
+      {(hintUnlocked || !reflectionQuestion) && (
+        <SolutionGate
+          submissionId={submissionId}
+          sessionId={sessionId}
+          authToken={authToken}
+          isVisible={unlockedTiers.has(3)}
+        />
       )}
 
       {prediction && prediction.trim() && (
@@ -125,31 +122,6 @@ export default function ClassifiedError({
           Your prediction: "{prediction}"
         </div>
       )}
-    </div>
-  );
-}
-
-function SolutionPanel({ solution }: { solution: { solution_code: string; explanation: string; changes_needed: string[] } }) {
-  return (
-    <div style={{ borderRadius: "7px", border: "1px solid #313244", padding: "13px 15px", background: "#1e1e2e", marginBottom: "16px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-        <span style={{ fontSize: "10px", fontWeight: 700, borderRadius: "3px", padding: "2px 7px", textTransform: "uppercase", background: "#3e2a2e", color: "#f38ba8" }}>✓ Solution</span>
-      </div>
-      <div style={{ marginBottom: "12px" }}>
-        <div style={{ fontSize: "11px", fontWeight: 700, color: "#a6adc8", marginBottom: "6px" }}>Changes needed:</div>
-        {solution.changes_needed.map((change, idx) => (
-          <div key={idx} style={{ fontSize: "12px", color: "#cdd6f4", padding: "4px 0 4px 12px", position: "relative" }}>
-            <span style={{ position: "absolute", left: 0, color: "#f38ba8" }}>•</span>{change}
-          </div>
-        ))}
-      </div>
-      <div style={{ fontSize: "12px", color: "#a6adc8", lineHeight: 1.5, padding: "8px 10px", background: "#181825", borderRadius: "5px", marginBottom: "12px" }}>
-        {solution.explanation}
-      </div>
-      <div style={{ fontSize: "11px", fontWeight: 700, color: "#a6adc8", marginBottom: "6px" }}>Working code:</div>
-      <pre style={{ background: "#181825", padding: "10px", borderRadius: "5px", fontSize: "12px", color: "#cdd6f4", overflowX: "auto", margin: 0, fontFamily: "monospace", lineHeight: 1.5 }}>
-        {solution.solution_code}
-      </pre>
     </div>
   );
 }

@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useDashboard } from "../../hooks/useDashboard";
+import { fetchSessionHistory, SessionHistoryItem } from "../../api/client";
 import ConceptBarChart from "./ConceptBarChart";
 
 interface DashboardPageProps {
@@ -9,6 +11,21 @@ interface DashboardPageProps {
 
 export default function DashboardPage({ sessionId, ownerToken, tokenReady }: DashboardPageProps) {
   const { loading, error, conceptStats, weaknessProfile, sessionSummary, metacognitive, refresh } = useDashboard(sessionId, ownerToken);
+  const [historyItems, setHistoryItems] = useState<SessionHistoryItem[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  async function loadHistory(q = "") {
+    setHistoryLoading(true);
+    try {
+      const res = await fetchSessionHistory(sessionId, ownerToken, q);
+      setHistoryItems(res.items);
+      setHistoryTotal(res.total);
+    } catch { /* ignore */ } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   if (!tokenReady) {
     return (
@@ -159,6 +176,63 @@ export default function DashboardPage({ sessionId, ownerToken, tokenReady }: Das
             Errors per Concept
           </div>
           <ConceptBarChart data={conceptStats?.concepts ?? []} />
+        </div>
+
+        {/* Section 6: Session History (FR19 / FR20) */}
+        <div style={{ background: "#181825", borderRadius: 8, border: "1px solid #313244", padding: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#a6adc8", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              Session History
+            </div>
+            <button
+              onClick={() => loadHistory(historyQuery)}
+              style={{ background: "#313244", color: "#cdd6f4", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}
+            >
+              Load
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <input
+              value={historyQuery}
+              onChange={e => setHistoryQuery(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && loadHistory(historyQuery)}
+              placeholder="Search code or concept…"
+              style={{ flex: 1, background: "#1e1e2e", border: "1px solid #313244", color: "#cdd6f4", borderRadius: 6, padding: "6px 10px", fontSize: 13 }}
+            />
+            <button
+              onClick={() => loadHistory(historyQuery)}
+              style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+            >
+              Search
+            </button>
+          </div>
+          {historyLoading && <div style={{ color: "#585b70", fontSize: 13 }}>Loading…</div>}
+          {!historyLoading && historyItems.length === 0 && (
+            <div style={{ color: "#585b70", fontSize: 13 }}>No history yet. Click Load to fetch your sessions.</div>
+          )}
+          {!historyLoading && historyItems.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ color: "#585b70", fontSize: 11, marginBottom: 4 }}>{historyTotal} total submissions</div>
+              {historyItems.map(item => (
+                <div key={item.submission_id} style={{ background: "#1e1e2e", borderRadius: 6, border: `1px solid ${item.success ? "#1e3a2e" : "#3e2a2e"}`, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: item.success ? "#a6e3a1" : "#f38ba8", fontWeight: 700 }}>
+                      {item.success ? "✓ Success" : `✗ ${item.exception_type ?? "Error"}`}
+                    </span>
+                    <span style={{ fontSize: 11, color: "#585b70" }}>
+                      {new Date(item.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                  {item.concept_category && (
+                    <div style={{ fontSize: 11, color: "#cba6f7", marginBottom: 4 }}>{item.concept_category}</div>
+                  )}
+                  <pre style={{ margin: 0, fontSize: 11, color: "#a6adc8", fontFamily: "monospace", whiteSpace: "pre-wrap", overflow: "hidden", maxHeight: 48 }}>
+                    {item.code_snippet}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
       </div>

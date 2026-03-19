@@ -12,9 +12,10 @@ interface OutputPanelProps {
   prediction: string | null;
   submissionId: string | null;
   sessionId: string;
+  authToken: string;
 }
 
-export default function OutputPanel({ state, result, prediction, submissionId, sessionId }: OutputPanelProps) {
+export default function OutputPanel({ state, result, prediction, submissionId, sessionId, authToken }: OutputPanelProps) {
   if (state === "idle") {
     return (
       <p className="text-[#585b70] text-sm text-center mt-16">
@@ -35,6 +36,7 @@ export default function OutputPanel({ state, result, prediction, submissionId, s
         prediction={prediction}
         predictionMatch={result.prediction_match ?? null}
         metacognitiveAccuracy={result.metacognitive_accuracy ?? null}
+        reflectionQuestion={result.reflection_question ?? null}
       />
     );
   }
@@ -48,9 +50,9 @@ export default function OutputPanel({ state, result, prediction, submissionId, s
         prediction={prediction}
         reflectionQuestion={result.reflection_question ?? undefined}
         contextualHint={result.contextual_hint ?? undefined}
-        solution={result.solution ?? undefined}
         submissionId={submissionId ?? ""}
         sessionId={sessionId}
+        authToken={authToken}
         failedAttempts={result.failed_attempts ?? null}
       />
     );

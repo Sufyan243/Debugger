@@ -195,12 +195,18 @@ export default function AuthModal({ onAuth, onClose }: Props) {
           <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 22, marginBottom: 6 }}>Welcome to Debugger</h2>
           <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 28 }}>Sign in to save your progress.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <button style={providerBtn} onClick={() => window.location.href = `${BACKEND_URL}/api/v1/auth/github`}
+            <button style={providerBtn} onClick={() => {
+              if (!BACKEND_URL) { alert("OAuth is not configured. Please use email login."); return; }
+              window.location.href = `${BACKEND_URL}/api/v1/auth/github`;
+            }}
               onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
               onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
               <GitHubIcon /> Continue with GitHub
             </button>
-            <button style={providerBtn} onClick={() => window.location.href = `${BACKEND_URL}/api/v1/auth/google`}
+            <button style={providerBtn} onClick={() => {
+              if (!BACKEND_URL) { alert("OAuth is not configured. Please use email login."); return; }
+              window.location.href = `${BACKEND_URL}/api/v1/auth/google`;
+            }}
               onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
               onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
               <GoogleIcon /> Continue with Google

@@ -4,7 +4,7 @@ from uuid import UUID
 
 class ReflectRequest(BaseModel):
     submission_id: UUID
-    response_text: str = Field(min_length=1, max_length=2000)
+    response_text: str = Field(min_length=10, max_length=2000)
     session_id: UUID
 
 

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = ""
     VERIFICATION_TOKEN_EXPIRE_MINUTES: int = 30
     DEV_SKIP_EMAIL: bool = False
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     @property
     def allowed_origins_list(self) -> list[str]:
@@ -37,5 +38,5 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-if settings.ENV == "production" and settings.JWT_SECRET_KEY == "change-me-in-production":
-    raise RuntimeError("JWT_SECRET_KEY must be set to a strong secret in production")
+if settings.JWT_SECRET_KEY == "change-me-in-production":
+    raise RuntimeError("JWT_SECRET_KEY must be changed from the default value before running the server")

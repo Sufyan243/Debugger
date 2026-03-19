@@ -35,7 +35,6 @@ export interface ExecuteData {
   classification: ClassificationData | null;
   reflection_question?: string | null;
   contextual_hint?: ContextualHint | null;
-  solution?: SolutionData | null;
   prediction_match?: boolean | null;
   metacognitive_accuracy?: number | null;
   failed_attempts?: number | null;
@@ -48,19 +47,20 @@ export interface ExecuteResponse {
   code?: string;
 }
 
-export async function postExecute(req: ExecuteRequest): Promise<ExecuteResponse> {
+export async function postExecute(req: ExecuteRequest, authToken: string): Promise<ExecuteResponse> {
   const response = await fetch(`${API_BASE}/api/v1/execute`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Authorization": `Bearer ${authToken}`,
     },
     body: JSON.stringify(req),
   });
-  
+
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
-  
+
   return await response.json();
 }
 
@@ -84,20 +84,20 @@ export async function postReflect(submissionId: string, responseText: string, se
   return await response.json();
 }
 
-export async function postHint(submissionId: string, tier: number, sessionId: string) {
+export async function postHint(submissionId: string, tier: number, sessionId: string, authToken: string) {
   const response = await fetch(`${API_BASE}/api/v1/hint`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
     body: JSON.stringify({ submission_id: submissionId, tier, session_id: sessionId }),
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 }
 
-export async function postSolutionRequest(submissionId: string, sessionId: string) {
+export async function postSolutionRequest(submissionId: string, sessionId: string, authToken: string) {
   const response = await fetch(`${API_BASE}/api/v1/solution-request`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
     body: JSON.stringify({ submission_id: submissionId, session_id: sessionId }),
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -192,6 +192,34 @@ export async function fetchSessionSummary(sessionId: string, ownerToken: string)
 
 export async function fetchMetacognitive(sessionId: string, ownerToken: string): Promise<MetacognitiveResponse> {
   const response = await sessionFetch(`${API_BASE}/api/v1/analytics/metacognitive?session_id=${sessionId}`, ownerToken);
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+}
+
+export interface SessionHistoryItem {
+  submission_id: string;
+  timestamp: string;
+  code_snippet: string;
+  success: boolean;
+  exception_type: string | null;
+  concept_category: string | null;
+}
+
+export interface SessionHistoryResponse {
+  items: SessionHistoryItem[];
+  total: number;
+}
+
+export async function fetchSessionHistory(
+  sessionId: string,
+  ownerToken: string,
+  q = "",
+  limit = 20,
+  offset = 0,
+): Promise<SessionHistoryResponse> {
+  const params = new URLSearchParams({ session_id: sessionId, limit: String(limit), offset: String(offset) });
+  if (q.trim()) params.set("q", q.trim());
+  const response = await sessionFetch(`${API_BASE}/api/v1/analytics/history?${params}`, ownerToken);
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 }

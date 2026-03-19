@@ -6,12 +6,13 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
-from app.api.v1.schemas.execute import ExecuteRequest, ExecuteResponse, ExecuteData, ClassificationData, ContextualHint, SolutionData
+from app.api.v1.schemas.execute import ExecuteRequest, ExecuteResponse, ExecuteData, ClassificationData, ContextualHint
 from app.db.session import get_db
 from app.db.models import CodeSubmission, ExecutionResult, ErrorRecord, HintSequence, MetacognitiveMetric, HintEvent
 from app.execution.service import execute_code
-from app.cognitive.engine import classify, get_reflection_question, generate_contextual_hint, generate_solution
+from app.cognitive.engine import classify, get_reflection_question, generate_contextual_hint
 from app.intelligence.prediction import compare_predictions, compute_accuracy
+from app.api.v1.deps.auth_guard import get_current_user_id, require_session_owner
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -20,7 +21,13 @@ logger = logging.getLogger(__name__)
 
 @router.post("/execute", response_model=ExecuteResponse)
 @limiter.limit("30/minute")
-async def execute_handler(request: Request, request_body: ExecuteRequest, db: AsyncSession = Depends(get_db)) -> ExecuteResponse:
+async def execute_handler(
+    request: Request,
+    request_body: ExecuteRequest,
+    db: AsyncSession = Depends(get_db),
+    caller_id: str = Depends(get_current_user_id),
+) -> ExecuteResponse:
+    require_session_owner(request_body.session_id, caller_id)
     # Initialize all response-level variables up front to prevent unbound locals
     prediction_match: Optional[bool] = None
     metacognitive_accuracy: Optional[float] = None
@@ -162,11 +169,10 @@ async def execute_handler(request: Request, request_body: ExecuteRequest, db: As
     classification_result = None
     reflection_question = None
     contextual_hint = None
-    solution = None
-    
+
     # Trigger Phase 2 features on error OR wrong prediction
     should_provide_assistance = not exec_result.success or (prediction_match is not None and not prediction_match)
-    
+
     if should_provide_assistance and not exec_result.success:
         classification_result = classify(exec_result.traceback)
         if classification_result is not None and execution_result_id is not None:
@@ -225,14 +231,10 @@ async def execute_handler(request: Request, request_body: ExecuteRequest, db: As
                     await db.rollback()
                     logger.warning(f"Failed to persist HintEvent: {e}")
             
-            solution_result = generate_solution(exec_result.traceback, request_body.code)
-            if solution_result:
-                solution = SolutionData(
-                    solution_code=solution_result.solution_code,
-                    explanation=solution_result.explanation,
-                    changes_needed=solution_result.changes_needed
-                )
-    
+    # When code succeeds but prediction was wrong, surface a metacognitive prompt
+    if exec_result.success and prediction_match is not None and not prediction_match:
+        reflection_question = "Your code ran correctly but your prediction didn't match — what assumption did you make that turned out to be wrong?"
+
     # Build response
     status = "success" if exec_result.success else "error"
     classification_data = None
@@ -253,7 +255,6 @@ async def execute_handler(request: Request, request_body: ExecuteRequest, db: As
         classification=classification_data,
         reflection_question=reflection_question,
         contextual_hint=contextual_hint,
-        solution=solution,
         prediction_match=prediction_match,
         metacognitive_accuracy=metacognitive_accuracy,
         failed_attempts=failed_attempts,

@@ -13,7 +13,7 @@ export function useExecute() {
 
   const isExecuting = state === "executing";
 
-  const runCode = async (code: string, sessionId: string, prediction?: string | null): Promise<void> => {
+  const runCode = async (code: string, sessionId: string, authToken: string, prediction?: string | null): Promise<void> => {
     if (code === lastSubmittedCode) {
       setSameCode(true);
       return;
@@ -26,12 +26,10 @@ export function useExecute() {
     setSubmittedPrediction(prediction ?? null);
 
     try {
-      const response = await postExecute({
-        code,
-        language: "python",
-        session_id: sessionId,
-        prediction,
-      });
+      const response = await postExecute(
+        { code, language: "python", session_id: sessionId, prediction },
+        authToken,
+      );
 
       setLastSubmittedCode(code);
 

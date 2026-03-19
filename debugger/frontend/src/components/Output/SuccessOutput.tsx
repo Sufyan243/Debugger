@@ -4,9 +4,10 @@ interface SuccessOutputProps {
   prediction: string | null;
   predictionMatch: boolean | null;
   metacognitiveAccuracy: number | null;
+  reflectionQuestion: string | null;
 }
 
-export default function SuccessOutput({ stdout, executionTime, prediction, predictionMatch, metacognitiveAccuracy }: SuccessOutputProps) {
+export default function SuccessOutput({ stdout, executionTime, prediction, predictionMatch, metacognitiveAccuracy, reflectionQuestion }: SuccessOutputProps) {
   return (
     <div style={{ border: "1px solid #a6e3a1", background: "#1e3a2e", padding: "16px", borderRadius: "8px" }}>
       <div style={{ color: "#a6e3a1", fontSize: "12px", textTransform: "uppercase", marginBottom: "8px" }}>
@@ -31,6 +32,11 @@ export default function SuccessOutput({ stdout, executionTime, prediction, predi
           ) : (
             <div>
               <div style={{ color: "#f38ba8", fontSize: "13px", fontWeight: "500", marginBottom: "6px" }}>✗ Mismatch detected</div>
+              {reflectionQuestion && (
+                <div style={{ color: "#f9e2af", fontSize: "13px", fontStyle: "italic", marginBottom: "4px" }}>
+                  {reflectionQuestion}
+                </div>
+              )}
               <div style={{ color: "#a6adc8", fontSize: "12px", fontStyle: "italic" }}>What assumption was incorrect?</div>
             </div>
           )}
