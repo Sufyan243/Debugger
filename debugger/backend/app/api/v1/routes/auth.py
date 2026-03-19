@@ -2,9 +2,11 @@ import httpx
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -18,10 +20,27 @@ from app.core.config import settings
 from app.core.email import send_verification_email
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 # Short-lived in-memory state store: {nonce: provider}
 # Acceptable for MVP single-instance; replace with Redis for multi-instance prod
 _oauth_states: dict[str, str] = {}
+
+# One-time auth codes: {code: (jwt, issued_at)}  — consumed on first exchange, expire after 5 min
+_CODE_TTL_SECONDS = 300
+_pending_codes: dict[str, tuple[str, datetime]] = {}
+
+
+def _issue_auth_code(jwt: str) -> str:
+    """Store a new one-time code and evict any expired entries."""
+    now = datetime.now(timezone.utc)
+    expired = [c for c, (_, issued) in _pending_codes.items()
+               if (now - issued).total_seconds() > _CODE_TTL_SECONDS]
+    for c in expired:
+        del _pending_codes[c]
+    code = secrets.token_urlsafe(32)
+    _pending_codes[code] = (jwt, now)
+    return code
 
 GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -57,6 +76,8 @@ class EmailRegisterRequest(BaseModel):
 
     @validator('password')
     def password_strength(cls, v):
+        if len(v.encode('utf-8')) > 72:
+            raise ValueError('Password must be 72 bytes or fewer')
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters')
         if not re.search(r'[a-zA-Z]', v):
@@ -73,7 +94,8 @@ class MergeRequest(BaseModel):
 # --- Anonymous session ---
 
 @router.post("/auth/anon", response_model=AuthResponse, status_code=201)
-async def create_anon_session(db: AsyncSession = Depends(get_db)):
+@limiter.limit("20/minute")
+async def create_anon_session(request: Request, db: AsyncSession = Depends(get_db)):
     anon = AnonSession()
     db.add(anon)
     await db.commit()
@@ -85,7 +107,8 @@ async def create_anon_session(db: AsyncSession = Depends(get_db)):
 # --- Email auth ---
 
 @router.post("/auth/register", response_model=MessageResponse, status_code=201)
-async def register(req: EmailRegisterRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, req: EmailRegisterRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == req.email, User.provider == "email"))
     existing = result.scalar_one_or_none()
     if existing:
@@ -144,11 +167,13 @@ async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_d
     user.verification_token_expires_at = None
     await db.commit()
     jwt = create_access_token(str(user.id))
-    return RedirectResponse(f"{settings.FRONTEND_URL}?token={jwt}&email={quote(user.email or '')}&avatar=&verified=1")
+    auth_code = _issue_auth_code(jwt)
+    return RedirectResponse(f"{settings.FRONTEND_URL}?code={auth_code}&email={quote(user.email or '')}&avatar=&verified=1")
 
 
 @router.post("/auth/login", response_model=AuthResponse)
-async def login(req: EmailLoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, req: EmailLoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == req.email, User.provider == "email"))
     user = result.scalar_one_or_none()
     if user is None or not user.hashed_password or not verify_password(req.password, user.hashed_password):
@@ -213,7 +238,8 @@ async def github_callback(code: str = Query(...), state: str = Query(...), db: A
 
     user = await _get_or_create_oauth_user(db, "github", provider_id, email, username, avatar_url)
     jwt = create_access_token(str(user.id))
-    return RedirectResponse(f"{settings.FRONTEND_URL}?token={jwt}&email={quote(email or '')}&avatar={quote(avatar_url or '')}")
+    auth_code = _issue_auth_code(jwt)
+    return RedirectResponse(f"{settings.FRONTEND_URL}?code={auth_code}&email={quote(email or '')}&avatar={quote(avatar_url or '')}")
 
 
 # --- Google OAuth ---
@@ -267,7 +293,27 @@ async def google_callback(code: str = Query(...), state: str = Query(...), db: A
 
     user = await _get_or_create_oauth_user(db, "google", provider_id, email, username, avatar_url)
     jwt = create_access_token(str(user.id))
-    return RedirectResponse(f"{settings.FRONTEND_URL}?token={jwt}&email={quote(email or '')}&avatar={quote(avatar_url or '')}")
+    auth_code = _issue_auth_code(jwt)
+    return RedirectResponse(f"{settings.FRONTEND_URL}?code={auth_code}&email={quote(email or '')}&avatar={quote(avatar_url or '')}")
+
+
+# --- OAuth code exchange ---
+
+class CodeExchangeRequest(BaseModel):
+    code: str
+
+
+@router.post("/auth/exchange", response_model=AuthResponse)
+async def exchange_code(req: CodeExchangeRequest):
+    """Consume a one-time auth code and return the JWT. Code is deleted on first use."""
+    now = datetime.now(timezone.utc)
+    entry = _pending_codes.pop(req.code, None)
+    if not entry:
+        raise HTTPException(status_code=400, detail="Invalid or expired auth code")
+    jwt, issued_at = entry
+    if (now - issued_at).total_seconds() > _CODE_TTL_SECONDS:
+        raise HTTPException(status_code=400, detail="Invalid or expired auth code")
+    return AuthResponse(access_token=jwt)
 
 
 # --- Session merge ---

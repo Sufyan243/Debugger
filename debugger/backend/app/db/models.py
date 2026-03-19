@@ -127,12 +127,17 @@ class SessionSnapshot(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
     session_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    date_bucket: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD
     submissions_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     errors_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     concepts_learned: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     hints_used: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     prediction_accuracy: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint('session_id', 'date_bucket', name='uq_snapshot_session_date'),
+    )
 
 
 class User(Base):

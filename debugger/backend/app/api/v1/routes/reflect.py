@@ -37,6 +37,17 @@ async def reflect_handler(
     if not error_record:
         raise HTTPException(status_code=404, detail="No error record found for this submission")
 
+    # Idempotency: return existing reflection if one already exists for this submission
+    stmt = select(ReflectionResponse).where(ReflectionResponse.submission_id == request.submission_id)
+    result = await db.execute(stmt)
+    existing = result.scalars().first()
+    if existing:
+        return ReflectResponse(
+            accepted=True,
+            hint_unlocked=existing.hint_unlocked,
+            reflection_id=existing.id
+        )
+
     # Create ReflectionResponse
     reflection = ReflectionResponse(
         submission_id=request.submission_id,
@@ -44,7 +55,18 @@ async def reflect_handler(
         hint_unlocked=True
     )
     db.add(reflection)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        # Race condition: another request inserted concurrently — fetch and return it
+        result = await db.execute(
+            select(ReflectionResponse).where(ReflectionResponse.submission_id == request.submission_id)
+        )
+        existing = result.scalars().first()
+        if existing:
+            return ReflectResponse(accepted=True, hint_unlocked=existing.hint_unlocked, reflection_id=existing.id)
+        raise
     await db.refresh(reflection)
 
     return ReflectResponse(

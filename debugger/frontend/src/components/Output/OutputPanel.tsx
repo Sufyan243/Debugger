@@ -51,6 +51,7 @@ export default function OutputPanel({ state, result, prediction, submissionId, s
         solution={result.solution ?? undefined}
         submissionId={submissionId ?? ""}
         sessionId={sessionId}
+        failedAttempts={result.failed_attempts ?? null}
       />
     );
   }

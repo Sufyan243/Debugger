@@ -13,6 +13,96 @@ function parseError(data: unknown): string {
   return "Something went wrong"
 }
 
+function passwordStrength(pw: string): { score: number; label: string; color: string } {
+  let score = 0
+  if (pw.length >= 8) score++
+  if (/[A-Z]/.test(pw)) score++
+  if (/[0-9]/.test(pw)) score++
+  if (/[^A-Za-z0-9]/.test(pw)) score++
+  const levels = [
+    { label: "", color: "transparent" },
+    { label: "Weak", color: "#ef4444" },
+    { label: "Fair", color: "#f59e0b" },
+    { label: "Good", color: "#3b82f6" },
+    { label: "Strong", color: "#22c55e" },
+  ]
+  return { score, ...levels[score] }
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ) : (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  )
+}
+
+function FieldWrapper({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>
+}
+
+function Label({ text }: { text: string }) {
+  return <label style={{ color: "#9ca3af", fontSize: 12, fontWeight: 500, letterSpacing: "0.03em" }}>{text}</label>
+}
+
+function PasswordField({
+  value, onChange, placeholder, label,
+}: { value: string; onChange: (v: string) => void; placeholder: string; label: string }) {
+  const [show, setShow] = useState(false)
+  const [focused, setFocused] = useState(false)
+  return (
+    <FieldWrapper>
+      <Label text={label} />
+      <div style={{ position: "relative" }}>
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          required
+          maxLength={72}
+          style={{
+            width: "100%", background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${focused ? "rgba(99,102,241,0.6)" : "rgba(255,255,255,0.08)"}`,
+            color: "#f9fafb", borderRadius: 10, padding: "11px 42px 11px 14px",
+            fontSize: 14, outline: "none", boxSizing: "border-box", transition: "border-color 0.15s",
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        <button
+          type="button"
+          onClick={() => setShow(s => !s)}
+          style={{
+            position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+            background: "none", border: "none", color: "#6b7280", cursor: "pointer",
+            padding: 0, display: "flex", alignItems: "center",
+          }}
+          tabIndex={-1}
+        >
+          <EyeIcon open={show} />
+        </button>
+      </div>
+    </FieldWrapper>
+  )
+}
+
+function Spinner() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ animation: "spin 0.7s linear infinite" }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+    </svg>
+  )
+}
+
 interface Props {
   onClose: () => void
 }
@@ -20,38 +110,45 @@ interface Props {
 export default function LandingAuthModal({ onClose }: Props) {
   const [mode, setMode] = useState<"options" | "email" | "pending">("options")
   const [isLogin, setIsLogin] = useState(true)
+  const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
-  function loginWithGitHub() {
-    window.location.href = `${BACKEND_URL}/api/v1/auth/github`
-  }
+  const strength = passwordStrength(password)
 
-  function loginWithGoogle() {
-    window.location.href = `${BACKEND_URL}/api/v1/auth/google`
+  function switchTab(login: boolean) {
+    setIsLogin(login)
+    setError("")
+    setPassword("")
+    setConfirmPassword("")
   }
 
   async function submitEmail(e: React.FormEvent) {
     e.preventDefault()
     setError("")
+    if (!isLogin && password !== confirmPassword) {
+      setError("Passwords do not match.")
+      return
+    }
     setLoading(true)
     try {
       const endpoint = isLogin ? "login" : "register"
+      const body: Record<string, string> = { email, password }
+      if (!isLogin && name.trim()) body.username = name.trim()
       const res = await fetch(`${BACKEND_URL}/api/v1/auth/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(parseError(data))
-      if (!isLogin) {
-        setMode("pending")
-        return
-      }
-      // Redirect to tool with token
-      window.location.href = `${TOOL_URL}?token=${data.access_token}&email=${encodeURIComponent(data.email ?? email)}&avatar=`
+      if (!isLogin) { setMode("pending"); return }
+      sessionStorage.setItem("oauth_token", data.access_token)
+      sessionStorage.setItem("oauth_email", data.email ?? email)
+      window.location.href = `${TOOL_URL}`
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Request failed")
     } finally {
@@ -60,104 +157,186 @@ export default function LandingAuthModal({ onClose }: Props) {
   }
 
   const overlay: React.CSSProperties = {
-    position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)",
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
+    backdropFilter: "blur(6px)",
   }
   const card: React.CSSProperties = {
-    background: "#111827", border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 16, padding: "36px 32px", width: 380, position: "relative",
+    background: "#0f1117", border: "1px solid rgba(255,255,255,0.07)",
+    borderRadius: 20, padding: "40px 36px", width: 420, position: "relative",
+    boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
   }
   const providerBtn: React.CSSProperties = {
-    width: "100%", display: "flex", alignItems: "center", gap: 12,
+    width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
     background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 8, padding: "11px 16px", color: "#f9fafb", fontSize: 14,
+    borderRadius: 10, padding: "12px 16px", color: "#f9fafb", fontSize: 14,
     fontWeight: 500, cursor: "pointer", transition: "background 0.15s",
+  }
+  const closeBtn: React.CSSProperties = {
+    position: "absolute", top: 16, right: 18, background: "none", border: "none",
+    color: "#4b5563", fontSize: 18, cursor: "pointer", lineHeight: 1,
+  }
+
+  if (mode === "pending") {
+    return (
+      <div style={overlay} onClick={onClose}>
+        <div style={card} onClick={e => e.stopPropagation()}>
+          <button onClick={onClose} style={closeBtn}>✕</button>
+          <div style={{ textAlign: "center", padding: "8px 0" }}>
+            <div style={{ fontSize: 44, marginBottom: 16 }}>📬</div>
+            <p style={{ color: "#f9fafb", fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Check your inbox</p>
+            <p style={{ color: "#6b7280", fontSize: 14, lineHeight: 1.7 }}>
+              We sent a verification link to<br />
+              <strong style={{ color: "#a5b4fc" }}>{email}</strong>
+            </p>
+            <p style={{ color: "#4b5563", fontSize: 13, marginTop: 20 }}>
+              Didn't get it? Check your spam folder, or submit the form again to resend.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (mode === "options") {
+    return (
+      <div style={overlay} onClick={onClose}>
+        <div style={card} onClick={e => e.stopPropagation()}>
+          <button onClick={onClose} style={closeBtn}>✕</button>
+          <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 22, marginBottom: 6 }}>Get started</h2>
+          <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 28 }}>Sign in to save your progress and share your wins.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button style={providerBtn} onClick={() => window.location.href = `${BACKEND_URL}/api/v1/auth/github`}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
+              <GitHubIcon /> Continue with GitHub
+            </button>
+            <button style={providerBtn} onClick={() => window.location.href = `${BACKEND_URL}/api/v1/auth/google`}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
+              <GoogleIcon /> Continue with Google
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "6px 0" }}>
+              <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+              <span style={{ color: "#374151", fontSize: 12 }}>or continue with email</span>
+              <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+            </div>
+            <button style={{ ...providerBtn, justifyContent: "center" }} onClick={() => setMode("email")}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
+              Continue with Email
+            </button>
+          </div>
+          <p style={{ color: "#374151", fontSize: 12, textAlign: "center", marginTop: 24 }}>
+            By continuing you agree to our Terms and Privacy Policy.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div style={overlay} onClick={onClose}>
       <div style={card} onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} style={{ position: "absolute", top: 14, right: 16, background: "none", border: "none", color: "#6b7280", fontSize: 18, cursor: "pointer" }}>✕</button>
+        <button onClick={onClose} style={closeBtn}>✕</button>
 
-        {mode === "pending" && (
-          <div style={{ textAlign: "center", padding: "16px 0" }}>
-            <p style={{ color: "#f9fafb", fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Check your inbox</p>
-            <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6 }}>
-              We've sent a verification link to <strong style={{ color: "#f9fafb" }}>{email}</strong>.<br />
-              Click the link to activate your account.<br />
-              <span style={{ color: "#6b7280", fontSize: 13 }}>Didn't get it? Submit again to resend.</span>
-            </p>
-          </div>
-        )}
+        <button onClick={() => setMode("options")} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", padding: 0, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+          ← Back
+        </button>
 
-        {mode === "options" && (
-          <>
-            <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Get started</h2>
-            <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 28 }}>Sign in to save your progress and share your wins.</p>
+        <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 20, marginBottom: 4 }}>
+          {isLogin ? "Sign in" : "Create account"}
+        </h2>
+        <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 24 }}>
+          {isLogin ? "Welcome back." : "Start debugging smarter."}
+        </p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <button style={providerBtn} onClick={loginWithGitHub}
-                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
-                <GitHubIcon /> Continue with GitHub
+        <div style={{ display: "flex", marginBottom: 28, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4 }}>
+          {(["Sign In", "Register"] as const).map((label, i) => {
+            const active = i === 0 ? isLogin : !isLogin
+            return (
+              <button key={label} onClick={() => switchTab(i === 0)}
+                style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13, transition: "all 0.15s", background: active ? "#1f2937" : "transparent", color: active ? "#f9fafb" : "#4b5563" }}>
+                {label}
               </button>
+            )
+          })}
+        </div>
 
-              <button style={providerBtn} onClick={loginWithGoogle}
-                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
-                <GoogleIcon /> Continue with Google
-              </button>
+        <form onSubmit={submitEmail} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {!isLogin && (
+            <FieldWrapper>
+              <Label text="Full name" />
+              <input
+                type="text" value={name} onChange={e => setName(e.target.value)}
+                placeholder="Jane Smith"
+                style={{
+                  width: "100%", background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.08)", color: "#f9fafb",
+                  borderRadius: 10, padding: "11px 14px", fontSize: 14, outline: "none",
+                  boxSizing: "border-box", transition: "border-color 0.15s",
+                }}
+                onFocus={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.6)")}
+                onBlur={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+              />
+            </FieldWrapper>
+          )}
 
-              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-                <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
-                <span style={{ color: "#4b5563", fontSize: 12 }}>or</span>
-                <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+          <FieldWrapper>
+            <Label text="Email address" />
+            <input
+              type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com" required
+              style={{
+                width: "100%", background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.08)", color: "#f9fafb",
+                borderRadius: 10, padding: "11px 14px", fontSize: 14, outline: "none",
+                boxSizing: "border-box", transition: "border-color 0.15s",
+              }}
+              onFocus={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.6)")}
+              onBlur={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+            />
+          </FieldWrapper>
+
+          <PasswordField value={password} onChange={setPassword} placeholder="••••••••" label="Password" />
+
+          {!isLogin && password.length > 0 && (
+            <div style={{ marginTop: -6 }}>
+              <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+                {[1, 2, 3, 4].map(i => (
+                  <div key={i} style={{
+                    flex: 1, height: 3, borderRadius: 2,
+                    background: i <= strength.score ? strength.color : "rgba(255,255,255,0.08)",
+                    transition: "background 0.2s",
+                  }} />
+                ))}
               </div>
-
-              <button style={{ ...providerBtn, justifyContent: "center" }} onClick={() => setMode("email")}
-                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
-                Continue with Email
-              </button>
+              {strength.label && (
+                <span style={{ fontSize: 11, color: strength.color }}>{strength.label} password</span>
+              )}
             </div>
+          )}
 
-            <p style={{ color: "#4b5563", fontSize: 12, textAlign: "center", marginTop: 20 }}>
-              By continuing you agree to our Terms and Privacy Policy.
-            </p>
-          </>
-        )}
+          {!isLogin && (
+            <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder="••••••••" label="Confirm password" />
+          )}
 
-        {mode === "email" && (
-          <>
-            <button onClick={() => setMode("options")} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", marginBottom: 16, padding: 0 }}>
-              Back
-            </button>
-
-            <div style={{ display: "flex", marginBottom: 24, background: "#0b0f19", borderRadius: 8, padding: 4 }}>
-              {(["Sign In", "Register"] as const).map((label, i) => {
-                const active = i === 0 ? isLogin : !isLogin
-                return (
-                  <button key={label} onClick={() => setIsLogin(i === 0)}
-                    style={{ flex: 1, padding: "6px 0", borderRadius: 6, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13, background: active ? "#1f2937" : "transparent", color: active ? "#f9fafb" : "#6b7280" }}>
-                    {label}
-                  </button>
-                )
-              })}
+          {error && (
+            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "10px 12px", color: "#f87171", fontSize: 13 }}>
+              {error}
             </div>
+          )}
 
-            <form onSubmit={submitEmail} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" required
-                style={{ background: "#0b0f19", border: "1px solid rgba(255,255,255,0.08)", color: "#f9fafb", borderRadius: 8, padding: "10px 14px", fontSize: 14, outline: "none" }} />
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required
-                style={{ background: "#0b0f19", border: "1px solid rgba(255,255,255,0.08)", color: "#f9fafb", borderRadius: 8, padding: "10px 14px", fontSize: 14, outline: "none" }} />
-              {error && <p style={{ color: "#ef4444", fontSize: 13, margin: 0 }}>{error}</p>}
-              <button type="submit" disabled={loading}
-                style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 600, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1, marginTop: 4 }}>
-                {loading ? "..." : isLogin ? "Sign In" : "Create Account"}
-              </button>
-            </form>
-          </>
-        )}
+          <button type="submit" disabled={loading} style={{
+            background: loading ? "rgba(99,102,241,0.5)" : "#6366f1", color: "#fff", border: "none",
+            borderRadius: 10, padding: "13px 0", fontWeight: 600, fontSize: 14,
+            cursor: loading ? "not-allowed" : "pointer", marginTop: 4, transition: "background 0.15s",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            {loading ? <Spinner /> : null}
+            {loading ? "Please wait…" : isLogin ? "Sign In" : "Create Account"}
+          </button>
+        </form>
       </div>
     </div>
   )

@@ -38,6 +38,7 @@ export interface ExecuteData {
   solution?: SolutionData | null;
   prediction_match?: boolean | null;
   metacognitive_accuracy?: number | null;
+  failed_attempts?: number | null;
 }
 
 export interface ExecuteResponse {

@@ -71,6 +71,24 @@ async def test_register_password_no_digit_returns_422(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_register_password_exceeds_72_bytes_returns_422(client: AsyncClient):
+    # 73 ASCII chars = 73 bytes, exceeds bcrypt safe limit
+    long_password = "A1" + "a" * 71
+    res = await client.post(REGISTER_URL, json={"email": "user@example.com", "password": long_password})
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_password_exactly_72_bytes_accepted(client: AsyncClient, db_session):
+    # 72 ASCII chars = 72 bytes, exactly at the limit — must be accepted
+    boundary_password = "A1" + "a" * 70
+    assert len(boundary_password.encode("utf-8")) == 72
+    with patch("app.api.v1.routes.auth.send_verification_email", new_callable=AsyncMock):
+        res = await client.post(REGISTER_URL, json={"email": "boundary@example.com", "password": boundary_password})
+    assert res.status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_register_smtp_failure_rolls_back_user(client: AsyncClient, db_session):
     with patch("app.api.v1.routes.auth.send_verification_email", new_callable=AsyncMock, side_effect=Exception("SMTP down")):
         res = await client.post(REGISTER_URL, json=VALID_PAYLOAD)
@@ -100,8 +118,10 @@ async def test_verify_email_valid_token_sets_verified_and_redirects(client: Asyn
 
     res = await client.get(f"{VERIFY_URL}?token={token}", follow_redirects=False)
     assert res.status_code in (302, 307)
-    assert "verified=1" in res.headers["location"]
-    assert "token=" in res.headers["location"]
+    location = res.headers["location"]
+    assert "verified=1" in location
+    assert "code=" in location
+    assert "token=" not in location
 
     await db_session.refresh(user)
     assert user.email_verified is True
@@ -195,3 +215,60 @@ async def test_login_no_complexity_check_on_existing_weak_password(client: Async
     # Correct password + verified account — must succeed regardless of complexity
     assert res.status_code == 200
     assert "access_token" in res.json()
+
+
+# ---------------------------------------------------------------------------
+# /auth/exchange
+# ---------------------------------------------------------------------------
+
+EXCHANGE_URL = "/api/v1/auth/exchange"
+
+
+async def _get_auth_code(client: AsyncClient, db_session) -> str:
+    """Helper: registers+verifies a user and returns the one-time code from the redirect."""
+    user = await _register_user(client, db_session, email="exchange@example.com")
+    token = user.verification_token
+    res = await client.get(f"{VERIFY_URL}?token={token}", follow_redirects=False)
+    location = res.headers["location"]
+    # Extract code= value from redirect URL
+    from urllib.parse import urlparse, parse_qs
+    qs = parse_qs(urlparse(location).query)
+    return qs["code"][0]
+
+
+@pytest.mark.asyncio
+async def test_exchange_valid_code_returns_jwt(client: AsyncClient, db_session):
+    code = await _get_auth_code(client, db_session)
+    res = await client.post(EXCHANGE_URL, json={"code": code})
+    assert res.status_code == 200
+    data = res.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_exchange_code_is_single_use(client: AsyncClient, db_session):
+    code = await _get_auth_code(client, db_session)
+    res1 = await client.post(EXCHANGE_URL, json={"code": code})
+    assert res1.status_code == 200
+    # Second use of the same code must be rejected
+    res2 = await client.post(EXCHANGE_URL, json={"code": code})
+    assert res2.status_code == 400
+    assert "expired" in res2.json()["detail"].lower() or "invalid" in res2.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_exchange_invalid_code_returns_400(client: AsyncClient):
+    res = await client.post(EXCHANGE_URL, json={"code": "not-a-real-code"})
+    assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_exchange_expired_code_returns_400(client: AsyncClient, db_session):
+    from app.api.v1.routes.auth import _pending_codes, _CODE_TTL_SECONDS
+    code = await _get_auth_code(client, db_session)
+    # Back-date the issued_at beyond the TTL
+    jwt_val, _ = _pending_codes[code]
+    _pending_codes[code] = (jwt_val, datetime.now(timezone.utc) - timedelta(seconds=_CODE_TTL_SECONDS + 1))
+    res = await client.post(EXCHANGE_URL, json={"code": code})
+    assert res.status_code == 400

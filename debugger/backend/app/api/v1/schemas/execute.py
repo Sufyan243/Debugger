@@ -48,6 +48,7 @@ class ExecuteData(BaseModel):
     solution: Optional[SolutionData] = None
     prediction_match: Optional[bool] = None
     metacognitive_accuracy: Optional[float] = None
+    failed_attempts: Optional[int] = None
 
 
 class ExecuteResponse(BaseModel):

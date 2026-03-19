@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
-from app.db.models import MetacognitiveMetric, SessionSnapshot
+from app.db.models import MetacognitiveMetric
 from app.intelligence.analytics_service import get_concept_stats, get_weakness_profile, get_session_summary
 from app.api.v1.schemas.analytics import (
     ConceptStatItem,
@@ -47,16 +47,6 @@ async def session_summary_handler(
 ) -> SessionSummaryResponse:
     require_session_owner(session_id, user_id)
     summary = await get_session_summary(session_id, db)
-    snapshot = SessionSnapshot(
-        session_id=session_id,
-        submissions_count=summary["submissions_count"],
-        errors_count=summary["errors_count"],
-        concepts_learned=summary["concepts_learned"],
-        hints_used=summary["hints_used"],
-        prediction_accuracy=summary["prediction_accuracy"],
-    )
-    db.add(snapshot)
-    await db.commit()
     return SessionSummaryResponse(**summary)
 
 

@@ -54,7 +54,7 @@ export default function DashboardPage({ sessionId, ownerToken, tokenReady }: Das
           <div style={{ fontSize: 12, fontWeight: 700, color: "#a6adc8", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 16 }}>
             Session Summary
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+          <div className="stats-grid">
             {[
               { label: "Submissions", value: sessionSummary?.submissions_count ?? "—" },
               { label: "Errors", value: sessionSummary?.errors_count ?? "—" },

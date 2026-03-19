@@ -1,3 +1,101 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Editor layout ─────────────────────────────────────────────────────── */
+.editor-shell {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  height: calc(100vh - 48px);
+}
+
+@media (max-width: 768px) {
+  .editor-shell {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: calc(100vh - 48px);
+  }
+}
+
+/* ── Editor pane ───────────────────────────────────────────────────────── */
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  background: #1e1e2e;
+  min-height: 50vh;
+}
+
+@media (max-width: 768px) {
+  .editor-pane {
+    min-height: 45vh;
+    border-bottom: 2px solid #313244;
+  }
+}
+
+/* ── Output pane ───────────────────────────────────────────────────────── */
+.output-pane {
+  background: #181825;
+  border-left: 1px solid #313244;
+  display: flex;
+  flex-direction: column;
+  min-height: 40vh;
+}
+
+@media (max-width: 768px) {
+  .output-pane {
+    border-left: none;
+    min-height: 40vh;
+  }
+}
+
+/* ── Dashboard stats grid ──────────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ── Nav ───────────────────────────────────────────────────────────────── */
+.app-nav {
+  background: #1e1e2e;
+  border-bottom: 1px solid #313244;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .app-nav {
+    padding: 0 14px;
+    gap: 8px;
+  }
+}
+
+/* ── Toolbar row (run button row) ──────────────────────────────────────── */
+.toolbar-row {
+  background: #181825;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex-shrink: 0;
+}

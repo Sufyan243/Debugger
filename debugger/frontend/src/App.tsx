@@ -62,7 +62,7 @@ function getUserId(token: string): string {
 // ---------------------------------------------------------------------------
 
 interface OAuthParams {
-  token: string;
+  code: string;
   email: string;
   avatar: string;
   verified: string;
@@ -71,12 +71,11 @@ interface OAuthParams {
 function getOAuthParams(): OAuthParams | null {
   try {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
+    const code = params.get("code");
     const verified = params.get("verified") ?? "";
-    if (!token && !verified) return null;
-    // URLSearchParams.get() already percent-decodes — no further decode needed
+    if (!code && !verified) return null;
     return {
-      token: token ?? "",
+      code: code ?? "",
       email: params.get("email") ?? "",
       avatar: params.get("avatar") ?? "",
       verified,
@@ -96,7 +95,7 @@ function clearAuthStorage() {
 function stripAuthParams() {
   try {
     const url = new URL(window.location.href);
-    ["token", "email", "avatar", "verified"].forEach(p => url.searchParams.delete(p));
+    ["code", "email", "avatar", "verified"].forEach(p => url.searchParams.delete(p));
     window.history.replaceState({}, "", url.pathname + url.search);
   } catch {}
 }
@@ -106,38 +105,22 @@ function stripAuthParams() {
 // ---------------------------------------------------------------------------
 
 function initJwt(): string {
-  const oauth = getOAuthParams();
-  if (oauth && oauth.token) {
-    if (isTokenValid(oauth.token)) return oauth.token;
-    // Invalid URL token — clear storage and stay anon
-    clearAuthStorage();
-    stripAuthParams();
-    return "";
-  }
+  // OAuth code exchange is async — handled in useEffect; nothing to init synchronously
   const stored = localStorage.getItem(JWT_KEY) ?? "";
   if (stored && isTokenValid(stored)) return stored;
-  if (stored) {
-    // Expired/malformed stored token — clear it
-    clearAuthStorage();
-  }
+  if (stored) clearAuthStorage();
   return "";
 }
 
 function initUsername(): string {
-  const oauth = getOAuthParams();
-  if (oauth && oauth.token && isTokenValid(oauth.token)) return oauth.email;
   return localStorage.getItem(USERNAME_KEY) ?? "";
 }
 
 function initAvatar(): string {
-  const oauth = getOAuthParams();
-  if (oauth && oauth.token && isTokenValid(oauth.token)) return oauth.avatar;
   return localStorage.getItem(AVATAR_KEY) ?? "";
 }
 
 function initSessionId(): string {
-  const oauth = getOAuthParams();
-  if (oauth && oauth.token && isTokenValid(oauth.token)) return getUserId(oauth.token);
   return localStorage.getItem(SESSION_KEY) ?? "";
 }
 
@@ -190,6 +173,18 @@ export default function App() {
 
   // On mount: handle OAuth redirect, then bootstrap anon if needed
   useEffect(() => {
+    // Check sessionStorage handoff from landing page email login
+    const ssToken = sessionStorage.getItem("oauth_token");
+    const ssEmail = sessionStorage.getItem("oauth_email");
+    if (ssToken && isTokenValid(ssToken)) {
+      sessionStorage.removeItem("oauth_token");
+      sessionStorage.removeItem("oauth_email");
+      handleAuth(ssToken, ssEmail ?? "", "");
+      return;
+    }
+    sessionStorage.removeItem("oauth_token");
+    sessionStorage.removeItem("oauth_email");
+
     const oauth = getOAuthParams();
     if (oauth) {
       if (oauth.verified === "expired" || oauth.verified === "error") {
@@ -198,15 +193,26 @@ export default function App() {
         bootstrapAnon();
         return;
       }
-      if (isTokenValid(oauth.token)) {
-        // State already initialised synchronously — just persist and merge
-        handleAuth(oauth.token, oauth.email, oauth.avatar);
-      } else {
-        clearAuthStorage();
-        stripAuthParams();
-        bootstrapAnon();
+      if (oauth.code) {
+        // Exchange one-time code for JWT — never touches URL token
+        fetch(`${BASE}/auth/exchange`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: oauth.code }),
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data.access_token && isTokenValid(data.access_token)) {
+              handleAuth(data.access_token, oauth.email, oauth.avatar);
+            } else {
+              clearAuthStorage();
+              stripAuthParams();
+              bootstrapAnon();
+            }
+          })
+          .catch(() => { stripAuthParams(); bootstrapAnon(); });
+        return;
       }
-      return;
     }
 
     // No OAuth params — use stored session or create anon
@@ -272,7 +278,7 @@ export default function App() {
 
   return (
     <div style={{ background: "#1e1e2e", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      <nav style={{ background: "#1e1e2e", borderBottom: "1px solid #313244", height: 48, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px" }}>
+      <nav className="app-nav">
         <span style={{ color: "#cdd6f4", fontWeight: 700 }}>Terra Debugger</span>
         <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
           {!isAnon && (
@@ -299,8 +305,8 @@ export default function App() {
       </nav>
 
       {view === "editor" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", flex: 1, height: "calc(100vh - 48px)" }}>
-          <div style={{ display: "flex", flexDirection: "column", background: "#1e1e2e" }}>
+        <div className="editor-shell">
+          <div className="editor-pane">
             <div style={{ background: "#181825", padding: "12px 16px", borderBottom: "1px solid #313244", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ color: "#cdd6f4", fontWeight: 600 }}>Python Editor</span>
               {isAnon && (
@@ -313,7 +319,7 @@ export default function App() {
               )}
             </div>
             <EditorPanel value={code} onChange={handleCodeChange} />
-            <div style={{ background: "#181825", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+            <div className="toolbar-row">
               <span style={{ color: "#585b70", fontSize: 12 }}>Python 3.11</span>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: 12, color: "#a6adc8", cursor: "pointer" }} onClick={() => { setPredictionEnabled(!predictionEnabled); if (predictionEnabled) setPrediction(""); }}>
                 <span>Predict before run</span>
@@ -342,7 +348,7 @@ export default function App() {
             )}
           </div>
 
-          <div style={{ background: "#181825", borderLeft: "1px solid #313244", display: "flex", flexDirection: "column" }}>
+          <div className="output-pane">
             <div style={{ background: "#181825", padding: "12px 16px", borderBottom: "1px solid #313244" }}>
               <span style={{ color: "#cdd6f4", fontWeight: 600 }}>Output</span>
             </div>
