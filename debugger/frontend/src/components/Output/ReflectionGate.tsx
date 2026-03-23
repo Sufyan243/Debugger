@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { postReflect } from "../../api/client";
 
-const JWT_KEY = "debugger_jwt";
-
 interface ReflectionGateProps {
   submissionId: string;
   sessionId: string;
   question: string;
+  authToken: string;
   onUnlocked: () => void;
 }
 
-export default function ReflectionGate({ submissionId, sessionId, question, onUnlocked }: ReflectionGateProps) {
+export default function ReflectionGate({ submissionId, sessionId, question, authToken, onUnlocked }: ReflectionGateProps) {
   const [text, setText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -25,7 +24,6 @@ export default function ReflectionGate({ submissionId, sessionId, question, onUn
     setIsSubmitting(true);
     setError(null);
     try {
-      const authToken = localStorage.getItem(JWT_KEY) ?? "";
       await postReflect(submissionId, trimmed, sessionId, authToken);
       setSubmitted(true);
       onUnlocked();

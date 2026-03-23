@@ -1,6 +1,7 @@
 from sqlalchemy import select, func, desc, case
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import CodeSubmission, ExecutionResult, ErrorRecord, ReflectionResponse, MetacognitiveMetric
+from app.db.models import CodeSubmission, ExecutionResult, ErrorRecord, ReflectionResponse, MetacognitiveMetric, SessionSnapshot
+from datetime import date
 
 
 async def get_concept_stats(session_id, db: AsyncSession) -> list[dict]:
@@ -43,45 +44,58 @@ async def get_concept_stats(session_id, db: AsyncSession) -> list[dict]:
     result = await db.execute(stmt)
     concept_data = result.fetchall()
     
-    # Step 6: Compute success_streak per concept from last 10 submissions
-    # For each concept, count consecutive successful submissions from most recent backward
+    # Step 6: Compute success_streak per concept.
+    # Fetch the full ordered submission window once (all submissions, all outcomes)
+    # and walk it from most-recent backward. A streak for a concept breaks on the
+    # first submission that has an ErrorRecord for that concept — unrelated failures
+    # from other concepts do NOT break the streak, but they also do NOT extend it.
+    # This matches the learner's actual experience: if they fix NameError but then
+    # hit a TypeError, their NameError streak is unaffected.
+    full_timeline_stmt = select(
+        CodeSubmission.id,
+        CodeSubmission.timestamp,
+        ExecutionResult.success_flag,
+        ErrorRecord.concept_category,
+    ).select_from(
+        CodeSubmission
+    ).join(
+        ExecutionResult, CodeSubmission.id == ExecutionResult.submission_id
+    ).outerjoin(
+        ErrorRecord, ExecutionResult.id == ErrorRecord.execution_result_id
+    ).where(
+        CodeSubmission.session_id == session_id,
+        CodeSubmission.id.in_(submission_ids)
+    ).order_by(desc(CodeSubmission.timestamp))
+
+    full_result = await db.execute(full_timeline_stmt)
+    full_timeline = full_result.fetchall()
+
     concept_stats = []
     for concept, error_count in concept_data:
-        # Get all submissions in last 10 ordered by timestamp descending (most recent first)
-        # Include both error submissions for this concept and all successful submissions
-        stmt = select(
-            CodeSubmission.timestamp,
-            ExecutionResult.success_flag
-        ).select_from(
-            CodeSubmission
-        ).join(
-            ExecutionResult, CodeSubmission.id == ExecutionResult.submission_id
-        ).outerjoin(
-            ErrorRecord, ExecutionResult.id == ErrorRecord.execution_result_id
-        ).where(
-            CodeSubmission.session_id == session_id,
-            CodeSubmission.id.in_(submission_ids)
-        ).where(
-            (ErrorRecord.concept_category == concept) |
-            (ExecutionResult.success_flag == True)
-        ).order_by(desc(CodeSubmission.timestamp))
-        
-        result = await db.execute(stmt)
-        timeline = result.fetchall()
-        
-        # Count consecutive successes from most recent backward
-        success_streak = 0
-        for _, success_flag in timeline:
-            if success_flag:
-                success_streak += 1
-            else:
-                break
-        
+        streak = 0
+        for row in full_timeline:
+            row_concept = row.concept_category
+            row_success = row.success_flag
+            if row_concept == concept:
+                # This submission is directly relevant to this concept.
+                if row_success:
+                    # Successful run that had this concept's error previously
+                    # — counts toward the streak.
+                    streak += 1
+                else:
+                    # This concept failed on this submission — streak ends.
+                    break
+            elif row_concept is None and row_success:
+                # Fully successful submission (no error record at all) — counts
+                # toward every concept's streak.
+                streak += 1
+            # Failures from OTHER concepts do not break or extend this streak.
+
         concept_stats.append({
             'concept': concept,
             'error_count': error_count,
             'attempts': total_submissions,
-            'success_streak': success_streak
+            'success_streak': streak,
         })
     
     return concept_stats
@@ -190,47 +204,45 @@ async def get_session_summary(session_id, db: AsyncSession) -> dict:
     result = await db.execute(stmt)
     errors_count = result.scalar() or 0
     
-    # Step 3: concepts_learned (concepts with successful outcomes after their last error)
-    # Get all concepts with their last error timestamp
-    stmt = select(
-        ErrorRecord.concept_category,
-        func.max(CodeSubmission.timestamp).label('last_error_time')
-    ).select_from(
-        CodeSubmission
-    ).join(
-        ExecutionResult, CodeSubmission.id == ExecutionResult.submission_id
-    ).join(
-        ErrorRecord, ExecutionResult.id == ErrorRecord.execution_result_id
-    ).where(
-        CodeSubmission.session_id == session_id
-    ).group_by(ErrorRecord.concept_category)
-    
-    result = await db.execute(stmt)
-    concept_last_errors = result.fetchall()
-    
-    # For each concept, check if most recent submission after last error is successful
-    # This uses a conservative heuristic: assume learner works on most recent error context
-    concepts_learned = 0
-    for concept, last_error_time in concept_last_errors:
-        # Get the most recent submission after this concept's last error
-        stmt = select(
-            ExecutionResult.success_flag
-        ).select_from(
-            CodeSubmission
-        ).join(
-            ExecutionResult, CodeSubmission.id == ExecutionResult.submission_id
-        ).where(
+    # Step 3: concepts_learned — single query.
+    # A concept is "learned" if the most recent submission in the session
+    # that touches that concept is a success (no ErrorRecord for it).
+    # We find, per concept, the timestamp of its last error, then count
+    # how many of those concepts have at least one successful submission
+    # after that timestamp — all in one query using a lateral-style subquery.
+    from sqlalchemy import literal_column
+    last_error_subq = (
+        select(
+            ErrorRecord.concept_category,
+            func.max(CodeSubmission.timestamp).label("last_error_time"),
+        )
+        .select_from(CodeSubmission)
+        .join(ExecutionResult, CodeSubmission.id == ExecutionResult.submission_id)
+        .join(ErrorRecord, ExecutionResult.id == ErrorRecord.execution_result_id)
+        .where(CodeSubmission.session_id == session_id)
+        .group_by(ErrorRecord.concept_category)
+        .subquery()
+    )
+    success_after_subq = (
+        select(last_error_subq.c.concept_category)
+        .select_from(last_error_subq)
+        .join(
+            CodeSubmission,
+            CodeSubmission.timestamp > last_error_subq.c.last_error_time,
+        )
+        .join(ExecutionResult, CodeSubmission.id == ExecutionResult.submission_id)
+        .where(
             CodeSubmission.session_id == session_id,
-            CodeSubmission.timestamp > last_error_time
-        ).order_by(desc(CodeSubmission.timestamp)).limit(1)
-        
-        result = await db.execute(stmt)
-        most_recent_success = result.scalar()
-        
-        # Concept is learned if most recent attempt after error was successful
-        if most_recent_success is True:
-            concepts_learned += 1
-    
+            ExecutionResult.success_flag.is_(True),
+        )
+        .distinct()
+        .subquery()
+    )
+    concepts_learned_result = await db.execute(
+        select(func.count()).select_from(success_after_subq)
+    )
+    concepts_learned = concepts_learned_result.scalar() or 0
+
     # Step 4: hints_used — count HintEvent rows for this session
     from app.db.models import HintEvent
     stmt = select(func.count(HintEvent.id)).where(
@@ -253,3 +265,70 @@ async def get_session_summary(session_id, db: AsyncSession) -> dict:
         'hints_used': hints_used,
         'prediction_accuracy': prediction_accuracy
     }
+
+
+async def upsert_session_snapshot(session_id, summary: dict, db: AsyncSession) -> None:
+    """Persist or update a SessionSnapshot row for today's date bucket.
+
+    Uses INSERT … ON CONFLICT DO UPDATE (PostgreSQL) or a manual
+    select-then-insert/update (SQLite / other dialects) so same-day calls
+    update counters rather than inserting duplicates.
+    """
+    import logging
+
+    bucket = date.today().isoformat()  # YYYY-MM-DD
+    try:
+        dialect = db.bind.dialect.name if db.bind else "unknown"
+    except Exception:
+        dialect = "unknown"
+
+    try:
+        if dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            stmt = pg_insert(SessionSnapshot).values(
+                session_id=session_id,
+                date_bucket=bucket,
+                submissions_count=summary['submissions_count'],
+                errors_count=summary['errors_count'],
+                concepts_learned=summary['concepts_learned'],
+                hints_used=summary['hints_used'],
+                prediction_accuracy=summary['prediction_accuracy'],
+            ).on_conflict_do_update(
+                constraint='uq_snapshot_session_date',
+                set_={
+                    'submissions_count': summary['submissions_count'],
+                    'errors_count': summary['errors_count'],
+                    'concepts_learned': summary['concepts_learned'],
+                    'hints_used': summary['hints_used'],
+                    'prediction_accuracy': summary['prediction_accuracy'],
+                },
+            )
+            await db.execute(stmt)
+        else:
+            # SQLite / other: manual upsert
+            existing = (await db.execute(
+                select(SessionSnapshot).where(
+                    SessionSnapshot.session_id == session_id,
+                    SessionSnapshot.date_bucket == bucket,
+                )
+            )).scalar_one_or_none()
+            if existing:
+                existing.submissions_count = summary['submissions_count']
+                existing.errors_count = summary['errors_count']
+                existing.concepts_learned = summary['concepts_learned']
+                existing.hints_used = summary['hints_used']
+                existing.prediction_accuracy = summary['prediction_accuracy']
+            else:
+                db.add(SessionSnapshot(
+                    session_id=session_id,
+                    date_bucket=bucket,
+                    submissions_count=summary['submissions_count'],
+                    errors_count=summary['errors_count'],
+                    concepts_learned=summary['concepts_learned'],
+                    hints_used=summary['hints_used'],
+                    prediction_accuracy=summary['prediction_accuracy'],
+                ))
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logging.getLogger(__name__).warning("Failed to upsert SessionSnapshot: %s", exc)

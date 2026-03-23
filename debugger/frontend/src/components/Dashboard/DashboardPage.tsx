@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDashboard } from "../../hooks/useDashboard";
 import { fetchSessionHistory, SessionHistoryItem } from "../../api/client";
 import ConceptBarChart from "./ConceptBarChart";
@@ -26,6 +26,12 @@ export default function DashboardPage({ sessionId, ownerToken, tokenReady }: Das
       setHistoryLoading(false);
     }
   }
+
+  // Auto-load history on mount, consistent with other dashboard sections
+  useEffect(() => {
+    if (ownerToken) loadHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, ownerToken]);
 
   if (!tokenReady) {
     return (

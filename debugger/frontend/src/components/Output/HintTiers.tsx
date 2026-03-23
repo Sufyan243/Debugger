@@ -7,10 +7,11 @@ interface HintData {
 interface HintTiersProps {
   hints: HintData[];
   unlockedTiers: Set<number>;
-  onUnlockNext: (tier: number) => void;
+  onUnlockNext: () => void;
+  unlockDisabled?: boolean;
 }
 
-export default function HintTiers({ hints, unlockedTiers, onUnlockNext }: HintTiersProps) {
+export default function HintTiers({ hints, unlockedTiers, onUnlockNext, unlockDisabled = false }: HintTiersProps) {
   return (
     <div style={{ marginBottom: "16px" }}>
       <div style={{ fontSize: "12px", fontWeight: 700, color: "#a6adc8", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px" }}>
@@ -62,14 +63,16 @@ export default function HintTiers({ hints, unlockedTiers, onUnlockNext }: HintTi
             </div>
             {canUnlockNext && (
               <button
-                onClick={() => onUnlockNext(hint.tier + 1)}
+                onClick={() => onUnlockNext()}
+                disabled={unlockDisabled}
                 style={{
-                  marginTop: "8px", background: "#3b82f6", color: "#fff", border: "none",
+                  marginTop: "8px", background: unlockDisabled ? "#313244" : "#3b82f6",
+                  color: unlockDisabled ? "#585b70" : "#fff", border: "none",
                   borderRadius: "5px", padding: "6px 14px", fontSize: "12px", fontWeight: 600,
-                  cursor: "pointer", width: "100%",
+                  cursor: unlockDisabled ? "not-allowed" : "pointer", width: "100%",
                 }}
               >
-                Get next hint →
+                {unlockDisabled ? "Loading…" : "Get next hint →"}
               </button>
             )}
           </div>

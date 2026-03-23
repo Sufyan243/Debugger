@@ -15,7 +15,7 @@ def _send_sync(to_email: str, subject: str, text: str, html: str) -> None:
     msg["To"] = to_email
     msg.attach(MIMEText(text, "plain"))
     msg.attach(MIMEText(html, "html"))
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as smtp:
+    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as smtp:
         smtp.starttls()
         smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
         smtp.sendmail(settings.EMAIL_FROM, to_email, msg.as_string())

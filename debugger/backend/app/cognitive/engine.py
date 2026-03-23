@@ -49,7 +49,23 @@ TAXONOMY = {
     "IndexError": ClassificationResult("IndexError", "List Management", "Boundary reasoning"),
     "KeyError": ClassificationResult("KeyError", "Dictionary Usage", "Mapping reasoning"),
     "SyntaxError": ClassificationResult("SyntaxError", "Syntax", "Code structure"),
+    "IndentationError": ClassificationResult("IndentationError", "Syntax", "Code structure"),
     "ZeroDivisionError": ClassificationResult("ZeroDivisionError", "Mathematical Operations", "Logic reasoning"),
+    "ImportError": ClassificationResult("ImportError", "Module Usage", "Dependency reasoning"),
+    "ModuleNotFoundError": ClassificationResult("ModuleNotFoundError", "Module Usage", "Dependency reasoning"),
+    "RecursionError": ClassificationResult("RecursionError", "Recursion", "Recursive logic reasoning"),
+    "RuntimeError": ClassificationResult("RuntimeError", "Runtime Behaviour", "Execution flow reasoning"),
+    "StopIteration": ClassificationResult("StopIteration", "Iteration", "Iterator reasoning"),
+    "OverflowError": ClassificationResult("OverflowError", "Mathematical Operations", "Logic reasoning"),
+    "MemoryError": ClassificationResult("MemoryError", "Resource Management", "Memory reasoning"),
+    "FileNotFoundError": ClassificationResult("FileNotFoundError", "File I/O", "File system reasoning"),
+    "PermissionError": ClassificationResult("PermissionError", "File I/O", "File system reasoning"),
+    "OSError": ClassificationResult("OSError", "File I/O", "File system reasoning"),
+    "IOError": ClassificationResult("IOError", "File I/O", "File system reasoning"),
+    "UnicodeDecodeError": ClassificationResult("UnicodeDecodeError", "String Encoding", "Encoding reasoning"),
+    "UnicodeEncodeError": ClassificationResult("UnicodeEncodeError", "String Encoding", "Encoding reasoning"),
+    "AssertionError": ClassificationResult("AssertionError", "Assertions", "Defensive programming"),
+    "NotImplementedError": ClassificationResult("NotImplementedError", "Object Attributes", "Object model reasoning"),
 }
 
 REFLECTION_QUESTIONS = {
@@ -62,6 +78,14 @@ REFLECTION_QUESTIONS = {
     "Dictionary Usage": "What keys does your dictionary actually contain, and which one were you trying to access?",
     "Syntax": "Check the syntax on the highlighted line. Is something missing or misplaced?",
     "Mathematical Operations": "What value are you dividing by? Can it ever be zero?",
+    "Module Usage": "Is the module name spelled correctly, and is it installed in your environment?",
+    "Recursion": "Does your recursive function have a base case that stops the recursion?",
+    "Runtime Behaviour": "What state is your program in when this error occurs?",
+    "Iteration": "Are you calling next() on an iterator that has already been exhausted?",
+    "Resource Management": "Is your program creating too many objects or using too much memory?",
+    "File I/O": "Does the file path exist, and do you have permission to access it?",
+    "String Encoding": "What encoding does the file or string use, and are you reading it with the right one?",
+    "Assertions": "What condition did your assert statement check, and why did it fail?",
 }
 
 CONTEXTUAL_HINTS = {
@@ -100,10 +124,40 @@ CONTEXTUAL_HINTS = {
         affected_line=line,
         explanation=f"Check for missing parentheses, quotes, or colons. {msg}"
     ),
+    "IndentationError": lambda msg, line: ContextualHint(
+        hint_text="Your indentation is incorrect.",
+        affected_line=line,
+        explanation=f"Python uses indentation to define code blocks. Make sure you're using consistent spaces or tabs. {msg}"
+    ),
     "ZeroDivisionError": lambda msg, line: ContextualHint(
         hint_text="You're dividing by zero.",
         affected_line=line,
         explanation="Division by zero is undefined. Check if your divisor could be zero."
+    ),
+    "ImportError": lambda msg, line: ContextualHint(
+        hint_text="Python couldn't import the module you requested.",
+        affected_line=line,
+        explanation=f"Check the module name for typos and make sure it's installed. {msg}"
+    ),
+    "ModuleNotFoundError": lambda msg, line: ContextualHint(
+        hint_text="The module you're trying to import doesn't exist or isn't installed.",
+        affected_line=line,
+        explanation=f"Check the module name for typos. If it's a third-party package, it needs to be installed first. {msg}"
+    ),
+    "RecursionError": lambda msg, line: ContextualHint(
+        hint_text="Your function is calling itself too many times.",
+        affected_line=line,
+        explanation="Every recursive function needs a base case that stops the recursion. Check that yours is reachable."
+    ),
+    "FileNotFoundError": lambda msg, line: ContextualHint(
+        hint_text="The file path you specified doesn't exist.",
+        affected_line=line,
+        explanation=f"Check that the file path is correct and the file exists. {msg}"
+    ),
+    "PermissionError": lambda msg, line: ContextualHint(
+        hint_text="You don't have permission to access this file or resource.",
+        affected_line=line,
+        explanation=f"Check the file permissions or try a different path. {msg}"
     ),
 }
 

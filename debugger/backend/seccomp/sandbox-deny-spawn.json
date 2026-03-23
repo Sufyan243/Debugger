@@ -1,0 +1,50 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": [
+        "fork",
+        "vfork",
+        "clone",
+        "clone3",
+        "execve",
+        "execveat",
+        "unshare",
+        "setns",
+        "pivot_root",
+        "chroot",
+        "mount",
+        "umount2",
+        "swapon",
+        "swapoff",
+        "reboot",
+        "kexec_load",
+        "kexec_file_load",
+        "init_module",
+        "finit_module",
+        "delete_module",
+        "ptrace",
+        "process_vm_readv",
+        "process_vm_writev",
+        "perf_event_open",
+        "bpf",
+        "userfaultfd",
+        "iopl",
+        "ioperm",
+        "syslog",
+        "acct",
+        "settimeofday",
+        "adjtimex",
+        "clock_adjtime",
+        "nfsservctl",
+        "quotactl",
+        "lookup_dcookie",
+        "add_key",
+        "request_key",
+        "keyctl"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    }
+  ]
+}

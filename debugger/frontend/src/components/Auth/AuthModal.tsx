@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { API_BASE } from "../../api/client";
 
-const BASE = `${import.meta.env.VITE_API_BASE_URL ?? ""}/api/v1`;
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const BASE = `${API_BASE}/api/v1`;
 
 interface Props {
   onAuth: (token: string, emailOrUser: string, avatar: string) => void;
@@ -102,13 +102,39 @@ function PasswordField({
 export default function AuthModal({ onAuth, onClose }: Props) {
   const [tab, setTab] = useState<"login" | "register">("login");
   const [mode, setMode] = useState<"options" | "email" | "pending">("options");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
+  // Focus trap: keep Tab/Shift+Tab inside the dialog
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const focusable = 'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])';
+    const nodes = () => Array.from(el.querySelectorAll<HTMLElement>(focusable)).filter(n => !n.hasAttribute("disabled"));
+    // Move focus into the dialog on open
+    nodes()[0]?.focus();
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key !== "Tab") return;
+      const items = nodes();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [mode, onClose]);
+
+  const titleId = "auth-modal-title";
   const strength = passwordStrength(password);
 
   function switchTab(t: "login" | "register") {
@@ -128,10 +154,10 @@ export default function AuthModal({ onAuth, onClose }: Props) {
     setLoading(true);
     try {
       const body: Record<string, string> = { email, password };
-      if (tab === "register" && name.trim()) body.username = name.trim();
       const res = await fetch(`${BASE}/auth/${tab}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(body),
       });
       const data = await res.json();
@@ -152,7 +178,7 @@ export default function AuthModal({ onAuth, onClose }: Props) {
   };
   const card: React.CSSProperties = {
     background: "#0f1117", border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 20, padding: "40px 36px", width: 420, position: "relative",
+    borderRadius: 20, padding: "40px 36px", width: 420, maxWidth: "calc(100vw - 32px)", position: "relative",
     boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
   };
   const providerBtn: React.CSSProperties = {
@@ -168,12 +194,19 @@ export default function AuthModal({ onAuth, onClose }: Props) {
 
   if (mode === "pending") {
     return (
-      <div style={overlay} onClick={onClose}>
-        <div style={card} onClick={e => e.stopPropagation()}>
-          <button onClick={onClose} style={closeBtn}>✕</button>
+      <div style={overlay} onClick={onClose} role="presentation">
+        <div
+          ref={dialogRef}
+          style={card}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          onClick={e => e.stopPropagation()}
+        >
+          <button onClick={onClose} style={closeBtn} aria-label="Close dialog">✕</button>
           <div style={{ textAlign: "center", padding: "8px 0" }}>
             <div style={{ fontSize: 44, marginBottom: 16 }}>📬</div>
-            <p style={{ color: "#f9fafb", fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Check your inbox</p>
+            <p id={titleId} style={{ color: "#f9fafb", fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Check your inbox</p>
             <p style={{ color: "#6b7280", fontSize: 14, lineHeight: 1.7 }}>
               We sent a verification link to<br />
               <strong style={{ color: "#a5b4fc" }}>{email}</strong>
@@ -189,23 +222,28 @@ export default function AuthModal({ onAuth, onClose }: Props) {
 
   if (mode === "options") {
     return (
-      <div style={overlay} onClick={onClose}>
-        <div style={card} onClick={e => e.stopPropagation()}>
-          <button onClick={onClose} style={closeBtn}>✕</button>
-          <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 22, marginBottom: 6 }}>Welcome to Debugger</h2>
+      <div style={overlay} onClick={onClose} role="presentation">
+        <div
+          ref={dialogRef}
+          style={card}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          onClick={e => e.stopPropagation()}
+        >
+          <button onClick={onClose} style={closeBtn} aria-label="Close dialog">✕</button>
+          <h2 id={titleId} style={{ color: "#f9fafb", fontWeight: 700, fontSize: 22, marginBottom: 6 }}>Welcome to Debugger</h2>
           <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 28 }}>Sign in to save your progress.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <button style={providerBtn} onClick={() => {
-              if (!BACKEND_URL) { alert("OAuth is not configured. Please use email login."); return; }
-              window.location.href = `${BACKEND_URL}/api/v1/auth/github`;
+              window.location.href = `${API_BASE}/api/v1/auth/github`;
             }}
               onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
               onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
               <GitHubIcon /> Continue with GitHub
             </button>
             <button style={providerBtn} onClick={() => {
-              if (!BACKEND_URL) { alert("OAuth is not configured. Please use email login."); return; }
-              window.location.href = `${BACKEND_URL}/api/v1/auth/google`;
+              window.location.href = `${API_BASE}/api/v1/auth/google`;
             }}
               onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
               onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}>
@@ -231,15 +269,22 @@ export default function AuthModal({ onAuth, onClose }: Props) {
   }
 
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={card} onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} style={closeBtn}>✕</button>
+    <div style={overlay} onClick={onClose} role="presentation">
+      <div
+        ref={dialogRef}
+        style={card}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={e => e.stopPropagation()}
+      >
+        <button onClick={onClose} style={closeBtn} aria-label="Close dialog">✕</button>
 
         <button onClick={() => setMode("options")} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", padding: 0, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
           ← Back
         </button>
 
-        <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 20, marginBottom: 4 }}>
+        <h2 id={titleId} style={{ color: "#f9fafb", fontWeight: 700, fontSize: 20, marginBottom: 4 }}>
           {tab === "login" ? "Sign in" : "Create account"}
         </h2>
         <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 24 }}>
@@ -256,24 +301,6 @@ export default function AuthModal({ onAuth, onClose }: Props) {
         </div>
 
         <form onSubmit={submitEmail} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {tab === "register" && (
-            <FieldWrapper>
-              <Label text="Full name" />
-              <input
-                type="text" value={name} onChange={e => setName(e.target.value)}
-                placeholder="Jane Smith"
-                style={{
-                  width: "100%", background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.08)", color: "#f9fafb",
-                  borderRadius: 10, padding: "11px 14px", fontSize: 14, outline: "none",
-                  boxSizing: "border-box", transition: "border-color 0.15s",
-                }}
-                onFocus={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.6)")}
-                onBlur={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
-              />
-            </FieldWrapper>
-          )}
-
           <FieldWrapper>
             <Label text="Email address" />
             <input

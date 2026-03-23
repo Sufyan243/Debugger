@@ -5,14 +5,19 @@ import OutputPanel from "./components/Output/OutputPanel";
 import DashboardPage from "./components/Dashboard/DashboardPage";
 import AuthModal from "./components/Auth/AuthModal";
 import { useExecute } from "./hooks/useExecute";
+import { fetchMe, API_BASE } from "./api/client";
 
-const JWT_KEY = "debugger_jwt";
 const USERNAME_KEY = "debugger_username";
 const AVATAR_KEY = "debugger_avatar";
 const SESSION_KEY = "debugger_session_id";
 const ANON_KEY = "debugger_anon_id";
 
-const BASE = `${import.meta.env.VITE_API_BASE_URL ?? ""}/api/v1`;
+// JWT is held only in a React ref (in-memory) for logout revocation.
+// It is never written to localStorage — the httpOnly cookie is the sole
+// persistent session credential. Non-sensitive display metadata
+// (username, avatar, session_id) is kept in localStorage for UI restoration.
+
+const BASE = `${API_BASE}/api/v1`;
 
 // ---------------------------------------------------------------------------
 // JWT helpers
@@ -46,12 +51,6 @@ function isTokenValid(token: string): boolean {
   return payload.exp * 1000 > Date.now();
 }
 
-/** Returns true if the token is a valid anon token. Never throws. */
-function isAnonToken(token: string): boolean {
-  const payload = parseJwtPayload(token);
-  return payload !== null && payload.anon === true;
-}
-
 /** Returns the sub from a valid token, or empty string on any failure. */
 function getUserId(token: string): string {
   return parseJwtPayload(token)?.sub ?? "";
@@ -63,8 +62,6 @@ function getUserId(token: string): string {
 
 interface OAuthParams {
   code: string;
-  email: string;
-  avatar: string;
   verified: string;
 }
 
@@ -74,12 +71,7 @@ function getOAuthParams(): OAuthParams | null {
     const code = params.get("code");
     const verified = params.get("verified") ?? "";
     if (!code && !verified) return null;
-    return {
-      code: code ?? "",
-      email: params.get("email") ?? "",
-      avatar: params.get("avatar") ?? "",
-      verified,
-    };
+    return { code: code ?? "", verified };
   } catch {
     return null;
   }
@@ -87,15 +79,16 @@ function getOAuthParams(): OAuthParams | null {
 
 /** Clears all auth-related storage and strips auth query params from the URL. */
 function clearAuthStorage() {
-  [JWT_KEY, USERNAME_KEY, AVATAR_KEY, SESSION_KEY, ANON_KEY].forEach(k =>
+  [USERNAME_KEY, AVATAR_KEY, SESSION_KEY, ANON_KEY].forEach(k =>
     localStorage.removeItem(k)
   );
+  // The httpOnly cookie is cleared server-side via POST /auth/logout.
 }
 
 function stripAuthParams() {
   try {
     const url = new URL(window.location.href);
-    ["code", "email", "avatar", "verified"].forEach(p => url.searchParams.delete(p));
+    ["code", "verified"].forEach(p => url.searchParams.delete(p));
     window.history.replaceState({}, "", url.pathname + url.search);
   } catch {}
 }
@@ -103,14 +96,6 @@ function stripAuthParams() {
 // ---------------------------------------------------------------------------
 // Startup state initializers — run once synchronously before first render
 // ---------------------------------------------------------------------------
-
-function initJwt(): string {
-  // OAuth code exchange is async — handled in useEffect; nothing to init synchronously
-  const stored = localStorage.getItem(JWT_KEY) ?? "";
-  if (stored && isTokenValid(stored)) return stored;
-  if (stored) clearAuthStorage();
-  return "";
-}
 
 function initUsername(): string {
   return localStorage.getItem(USERNAME_KEY) ?? "";
@@ -129,18 +114,20 @@ function initSessionId(): string {
 // ---------------------------------------------------------------------------
 
 export default function App() {
-  const [jwt, setJwt] = useState<string>(initJwt);
+  const [jwt, setJwt] = useState<string>("");
+  const jwtRef = useRef<string>(""); // in-memory only — used solely for logout revocation
   const [username, setUsername] = useState<string>(initUsername);
   const [avatar, setAvatar] = useState<string>(initAvatar);
+  const [isAnon, setIsAnon] = useState<boolean>(true);
+  const [authReady, setAuthReady] = useState<boolean>(false);
   const [showAuth, setShowAuth] = useState(false);
   const [verifiedNotice, setVerifiedNotice] = useState<"expired" | "error" | null>(null);
   const [view, setView] = useState<"editor" | "dashboard">("editor");
   const [code, setCode] = useState("");
   const [predictionEnabled, setPredictionEnabled] = useState(false);
   const [prediction, setPrediction] = useState("");
-  const { state, result, isExecuting, sameCode, submittedPrediction, runCode, resetToIdle } = useExecute();
+  const { state, result, isExecuting, error, sameCode, submittedPrediction, runCode, resetToIdle } = useExecute();
 
-  const isAnon = !jwt || isAnonToken(jwt);
   const [sessionId, setSessionId] = useState<string>(initSessionId);
 
   // Version counter — increment to invalidate any in-flight anon bootstrap
@@ -151,14 +138,13 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   function bootstrapAnon() {
-    // Guard: if a valid token already exists, don't overwrite it
-    const existing = localStorage.getItem(JWT_KEY);
-    if (existing && isTokenValid(existing)) return;
+    // Guard: if a real authenticated session is already established, don't overwrite it
+    if (authReady && !isAnon) return;
 
     anonReqVersion.current += 1;
     const version = anonReqVersion.current;
 
-    fetch(`${BASE}/auth/anon`, { method: "POST" })
+    fetch(`${BASE}/auth/anon`, { method: "POST", credentials: "include" })
       .then(r => r.json())
       .then(data => {
         // Stale: a newer request started, or auth has been established since
@@ -166,68 +152,85 @@ export default function App() {
         if (!data.access_token) return;
         const anonId = getUserId(data.access_token);
         if (!anonId) return;
-        localStorage.setItem(JWT_KEY, data.access_token);
+        // JWT held in ref only — not persisted to localStorage
+        jwtRef.current = data.access_token;
         localStorage.setItem(ANON_KEY, anonId);
         localStorage.setItem(SESSION_KEY, anonId);
         setJwt(data.access_token);
+        setIsAnon(true);
         setSessionId(anonId);
+        setAuthReady(true);
       })
-      .catch(() => {});
+      .catch(() => { setAuthReady(true); });
   }
 
-  // On mount: handle OAuth redirect, then bootstrap anon if needed
+  // On mount: rehydrate from cookie first, then handle OAuth redirect or anon bootstrap
   useEffect(() => {
-    // Check sessionStorage handoff from landing page email login
-    const ssToken = sessionStorage.getItem("oauth_token");
-    const ssEmail = sessionStorage.getItem("oauth_email");
-    if (ssToken && isTokenValid(ssToken)) {
-      sessionStorage.removeItem("oauth_token");
-      sessionStorage.removeItem("oauth_email");
-      handleAuth(ssToken, ssEmail ?? "", "");
-      return;
-    }
-    sessionStorage.removeItem("oauth_token");
-    sessionStorage.removeItem("oauth_email");
-
     const oauth = getOAuthParams();
+
+    // OAuth redirect takes priority — skip rehydration and handle the code/error
     if (oauth) {
       if (oauth.verified === "expired" || oauth.verified === "error") {
         setVerifiedNotice(oauth.verified);
         stripAuthParams();
+        setAuthReady(true);
         bootstrapAnon();
         return;
       }
       if (oauth.code) {
-        // Exchange one-time code for JWT — never touches URL token
         fetch(`${BASE}/auth/exchange`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ code: oauth.code }),
         })
           .then(r => r.json())
           .then(data => {
             if (data.access_token && isTokenValid(data.access_token)) {
-              handleAuth(data.access_token, oauth.email, oauth.avatar);
+              handleAuth(data.access_token, data.email ?? "", data.avatar_url ?? "");
             } else {
               clearAuthStorage();
               stripAuthParams();
+              setAuthReady(true);
               bootstrapAnon();
             }
           })
-          .catch(() => { stripAuthParams(); bootstrapAnon(); });
+          .catch(() => { stripAuthParams(); setAuthReady(true); bootstrapAnon(); });
         return;
       }
     }
 
-    // No OAuth params — use stored session or create anon
-    const existingSession = localStorage.getItem(SESSION_KEY);
-    if (existingSession) {
-      setSessionId(existingSession);
-      return;
-    }
-    bootstrapAnon();
+    // No OAuth params — attempt cookie rehydration
+    fetchMe().then(me => {
+      if (me && !me.anon) {
+        // Valid real-user cookie: restore authenticated state
+        const storedUsername = localStorage.getItem(USERNAME_KEY) ?? me.email ?? "";
+        const storedAvatar = localStorage.getItem(AVATAR_KEY) ?? me.avatar_url ?? "";
+        setUsername(storedUsername);
+        setAvatar(storedAvatar);
+        setSessionId(me.sub);
+        localStorage.setItem(SESSION_KEY, me.sub);
+        setIsAnon(false);
+        setAuthReady(true);
+      } else if (me && me.anon) {
+        // Valid anon cookie: restore anon session without creating a new one
+        jwtRef.current = "";
+        setSessionId(me.sub);
+        localStorage.setItem(SESSION_KEY, me.sub);
+        localStorage.setItem(ANON_KEY, me.sub);
+        setIsAnon(true);
+        setAuthReady(true);
+      } else {
+        // null → explicit 401/403: no valid cookie — bootstrap a fresh anon session
+        setAuthReady(true);
+        bootstrapAnon();
+      }
+    }).catch(() => {
+      // Transient failure (5xx/network): keep whatever session state exists.
+      // Do NOT call bootstrapAnon() — that would silently overwrite a real cookie.
+      setAuthReady(true);
+    });
 
-    // Invalidate any pending anon request on unmount
     return () => { anonReqVersion.current += 1; };
   }, []);
 
@@ -242,7 +245,10 @@ export default function App() {
     const anonId = localStorage.getItem(ANON_KEY);
     const userId = getUserId(token);
 
-    localStorage.setItem(JWT_KEY, token);
+    // JWT held in ref only — not persisted to localStorage.
+    // The httpOnly cookie (set by the backend exchange/login endpoint) is the
+    // authoritative credential sent automatically on all requests.
+    jwtRef.current = token;
     localStorage.setItem(USERNAME_KEY, emailOrUser);
     localStorage.setItem(AVATAR_KEY, avatarUrl);
     localStorage.setItem(SESSION_KEY, userId);
@@ -250,27 +256,76 @@ export default function App() {
     setUsername(emailOrUser);
     setAvatar(avatarUrl);
     setSessionId(userId);
+    setIsAnon(false);
+    setAuthReady(true);
     setShowAuth(false);
     stripAuthParams();
 
     if (anonId) {
       try {
-        await fetch(`${BASE}/auth/merge`, {
+        // Send both the cookie (automatic) and a Bearer header so merge
+        // succeeds even when the cookie has not yet propagated across origins.
+        const mergeRes = await fetch(`${BASE}/auth/merge`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
           body: JSON.stringify({ anon_id: anonId }),
+          credentials: "include",
         });
-        localStorage.removeItem(ANON_KEY);
-      } catch {}
+        if (mergeRes.status === 401 || mergeRes.status === 403) {
+          handleSessionExpired();
+          return;
+        }
+        // Only clear ANON_KEY after a confirmed successful merge response.
+        // On network failure or merge failure the key is kept so the next
+        // login attempt can retry the merge.
+        if (mergeRes.ok) {
+          const mergeData = await mergeRes.json().catch(() => ({}));
+          if (mergeData.merged === true) {
+            localStorage.removeItem(ANON_KEY);
+          }
+        }
+      } catch {
+        // Network failure — keep ANON_KEY for retry on next login.
+      }
     }
   }
 
-  function handleLogout() {
+  function handleSessionExpired() {
+    jwtRef.current = "";
     clearAuthStorage();
     setJwt("");
     setUsername("");
     setAvatar("");
     setSessionId("");
+    setIsAnon(true);
+    setShowAuth(true);
+    bootstrapAnon();
+  }
+
+  async function handleLogout() {
+    // Revoke the token server-side. Send the JWT from the in-memory ref as
+    // Bearer if available; the backend also accepts the cookie as fallback.
+    try {
+      await fetch(`${BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        ...(jwtRef.current
+          ? { headers: { Authorization: `Bearer ${jwtRef.current}` } }
+          : {}),
+      });
+    } catch {
+      // Network failure — proceed with local logout anyway.
+    }
+    jwtRef.current = "";
+    clearAuthStorage();
+    setJwt("");
+    setUsername("");
+    setAvatar("");
+    setSessionId("");
+    setIsAnon(true);
     setView("editor");
     bootstrapAnon();
   }
@@ -280,6 +335,9 @@ export default function App() {
     setCode(v);
   };
 
+  // Suppress render until cookie rehydration completes to avoid flash of anon UI
+  if (!authReady) return null;
+
   return (
     <div style={{ background: "#1e1e2e", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <nav className="app-nav">
@@ -287,8 +345,20 @@ export default function App() {
         <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
           {!isAnon && (
             <>
-              <a style={{ color: view === "editor" ? "#cdd6f4" : "#585b70", textDecoration: "none", cursor: "pointer", fontSize: 14 }} onClick={() => setView("editor")}>Editor</a>
-              <a style={{ color: view === "dashboard" ? "#cdd6f4" : "#585b70", textDecoration: "none", cursor: "pointer", fontSize: 14 }} onClick={() => setView("dashboard")}>My Progress</a>
+              <button
+                onClick={() => setView("editor")}
+                aria-current={view === "editor" ? "page" : undefined}
+                style={{ background: "none", border: "none", color: view === "editor" ? "#cdd6f4" : "#585b70", cursor: "pointer", fontSize: 14, padding: 0 }}
+              >
+                Editor
+              </button>
+              <button
+                onClick={() => setView("dashboard")}
+                aria-current={view === "dashboard" ? "page" : undefined}
+                style={{ background: "none", border: "none", color: view === "dashboard" ? "#cdd6f4" : "#585b70", cursor: "pointer", fontSize: 14, padding: 0 }}
+              >
+                My Progress
+              </button>
             </>
           )}
           {isAnon ? (
@@ -300,9 +370,14 @@ export default function App() {
             </button>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {avatar && <img src={avatar} alt="" style={{ width: 24, height: 24, borderRadius: "50%" }} />}
+              {avatar && <img src={avatar} alt="User avatar" style={{ width: 24, height: 24, borderRadius: "50%" }} />}
               <span style={{ color: "#585b70", fontSize: 12 }}>{username}</span>
-              <a style={{ color: "#f38ba8", fontSize: 12, cursor: "pointer" }} onClick={handleLogout}>Logout</a>
+              <button
+                onClick={handleLogout}
+                style={{ background: "none", border: "none", color: "#f38ba8", fontSize: 12, cursor: "pointer", padding: 0 }}
+              >
+                Logout
+              </button>
             </div>
           )}
         </div>
@@ -314,24 +389,34 @@ export default function App() {
             <div style={{ background: "#181825", padding: "12px 16px", borderBottom: "1px solid #313244", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ color: "#cdd6f4", fontWeight: 600 }}>Python Editor</span>
               {isAnon && (
-                <span
-                  style={{ color: "#6366f1", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}
+                <button
                   onClick={() => setShowAuth(true)}
+                  style={{ background: "none", border: "none", color: "#6366f1", fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: 0 }}
                 >
                   Sign in to save progress
-                </span>
+                </button>
               )}
             </div>
             <EditorPanel value={code} onChange={handleCodeChange} />
             <div className="toolbar-row">
               <span style={{ color: "#585b70", fontSize: 12 }}>Python 3.11</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: 12, color: "#a6adc8", cursor: "pointer" }} onClick={() => { setPredictionEnabled(!predictionEnabled); if (predictionEnabled) setPrediction(""); }}>
+              <button
+                role="switch"
+                aria-checked={predictionEnabled}
+                aria-label="Predict before run"
+                onClick={() => { setPredictionEnabled(!predictionEnabled); if (predictionEnabled) setPrediction(""); }}
+                style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: 12, color: "#a6adc8", cursor: "pointer", background: "none", border: "none", padding: 0 }}
+              >
                 <span>Predict before run</span>
-                <div style={{ width: 34, height: 18, background: predictionEnabled ? "#3b82f6" : "#45475a", borderRadius: 9, position: "relative" }}>
-                  <div style={{ width: 14, height: 14, background: "#fff", borderRadius: "50%", position: "absolute", top: 2, left: predictionEnabled ? 18 : 2, transition: "left 0.2s" }}></div>
+                <div aria-hidden="true" style={{ width: 34, height: 18, background: predictionEnabled ? "#3b82f6" : "#45475a", borderRadius: 9, position: "relative" }}>
+                  <div style={{ width: 14, height: 14, background: "#fff", borderRadius: "50%", position: "absolute", top: 2, left: predictionEnabled ? 18 : 2, transition: "left 0.2s" }} />
                 </div>
-              </div>
-              <RunButton onClick={() => runCode(code, sessionId, jwt, predictionEnabled && prediction.trim() ? prediction : null)} disabled={isExecuting || !sessionId} />
+              </button>
+              <RunButton
+                onClick={() => runCode(code, sessionId, jwt, predictionEnabled && prediction.trim() ? prediction : null)}
+                disabled={isExecuting || !sessionId}
+                sessionUnavailable={!sessionId}
+              />
             </div>
             {predictionEnabled && (
               <div style={{ background: "#181825", borderTop: "1px solid #313244", padding: "12px 16px" }}>
@@ -357,7 +442,7 @@ export default function App() {
               <span style={{ color: "#cdd6f4", fontWeight: 600 }}>Output</span>
             </div>
             <div style={{ flex: 1, padding: 16, overflow: "auto" }}>
-              <OutputPanel state={state} result={result} prediction={submittedPrediction} submissionId={result?.submission_id ?? null} sessionId={sessionId} authToken={jwt} />
+              <OutputPanel state={state} result={result} prediction={submittedPrediction} submissionId={result?.submission_id ?? null} sessionId={sessionId} authToken={jwt} error={error} onSessionExpired={handleSessionExpired} />
             </div>
           </div>
         </div>

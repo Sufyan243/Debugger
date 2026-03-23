@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { postSolutionRequest } from "../../api/client";
+import { postSolutionRequest, API_BASE } from "../../api/client";
 
 interface SolutionGateProps {
   submissionId: string;
@@ -13,16 +13,19 @@ export default function SolutionGate({ submissionId, sessionId, authToken, isVis
   const [solutionText, setSolutionText] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Hydrate current request_count from backend on mount so page refresh
-  // cannot reset the counter and bypass the 3-request cognitive friction gate.
+  // Hydrate current state from the read-only GET endpoint — does NOT increment request_count.
   useEffect(() => {
     if (!isVisible || !submissionId) return;
-    postSolutionRequest(submissionId, sessionId, authToken)
+    setError(null);
+    fetch(
+      `${API_BASE}/api/v1/solution-request/${submissionId}?session_id=${sessionId}`,
+      { credentials: "include" }
+    )
+      .then(r => r.ok ? r.json() : null)
       .then(res => {
-        // Dry-run: we just want the current count. The backend increments on
-        // each call, so we immediately get the real persisted state. If the
-        // solution is already revealed we surface it right away.
+        if (!res) { setRequestCount(0); return; }
         setRequestCount(res.request_count);
         if (res.solution_revealed && res.solution_text) {
           setSolutionText(res.solution_text);
@@ -33,21 +36,21 @@ export default function SolutionGate({ submissionId, sessionId, authToken, isVis
   }, [submissionId]);
 
   if (!isVisible) return null;
-  if (requestCount === null) return null; // still loading initial state
+  if (requestCount === null) return null;
 
   const handleRequest = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const response = await postSolutionRequest(submissionId, sessionId, authToken);
       setRequestCount(response.request_count);
       if (response.solution_revealed && response.solution_text) {
         setSolutionText(response.solution_text);
-        setDialogOpen(false);
-      } else {
-        setDialogOpen(false);
       }
+      setDialogOpen(false);
     } catch (e) {
-      console.error(e);
+      setError(e instanceof Error ? e.message : "Request failed. Please try again.");
+      // Keep dialog open so the user can retry without losing their place.
     } finally {
       setIsLoading(false);
     }
@@ -91,7 +94,7 @@ export default function SolutionGate({ submissionId, sessionId, authToken, isVis
     <>
       {!dialogOpen && (
         <button
-          onClick={() => setDialogOpen(true)}
+          onClick={() => { setError(null); setDialogOpen(true); }}
           style={{
             marginTop: "10px", background: "transparent", color: "#f38ba8",
             border: "1.5px solid #f38ba8", borderRadius: "5px", padding: "8px 14px",
@@ -111,9 +114,23 @@ export default function SolutionGate({ submissionId, sessionId, authToken, isVis
             <div style={{ color: "#a6adc8", fontSize: "14px", marginBottom: "20px" }}>
               {dialogContent[dialogIndex].body}
             </div>
+
+            {error && (
+              <div style={{ background: "rgba(243,139,168,0.1)", border: "1px solid #f38ba8", borderRadius: "6px", padding: "10px 12px", color: "#f38ba8", fontSize: "13px", marginBottom: "16px" }}>
+                {error}
+                <button
+                  onClick={handleRequest}
+                  disabled={isLoading}
+                  style={{ display: "block", marginTop: "8px", background: "none", border: "none", color: "#f38ba8", fontSize: "12px", cursor: "pointer", padding: 0, textDecoration: "underline" }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: "12px" }}>
               <button
-                onClick={() => setDialogOpen(false)}
+                onClick={() => { setDialogOpen(false); setError(null); }}
                 style={{ flex: 1, background: "#313244", color: "#cdd6f4", border: "none", borderRadius: "5px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
               >
                 {dialogContent[dialogIndex].cancel}
@@ -121,9 +138,9 @@ export default function SolutionGate({ submissionId, sessionId, authToken, isVis
               <button
                 onClick={handleRequest}
                 disabled={isLoading}
-                style={{ flex: 1, background: "#f38ba8", color: "#1e1e2e", border: "none", borderRadius: "5px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                style={{ flex: 1, background: isLoading ? "#7a4a56" : "#f38ba8", color: "#1e1e2e", border: "none", borderRadius: "5px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: isLoading ? "not-allowed" : "pointer" }}
               >
-                {dialogContent[dialogIndex].confirm}
+                {isLoading ? "Loading…" : dialogContent[dialogIndex].confirm}
               </button>
             </div>
           </div>

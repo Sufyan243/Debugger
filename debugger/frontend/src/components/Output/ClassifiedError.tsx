@@ -21,6 +21,7 @@ interface ClassifiedErrorProps {
   sessionId: string;
   authToken: string;
   failedAttempts?: number | null;
+  onSessionExpired?: () => void;
 }
 
 export default function ClassifiedError({
@@ -34,9 +35,12 @@ export default function ClassifiedError({
   sessionId,
   authToken,
   failedAttempts,
+  onSessionExpired,
 }: ClassifiedErrorProps) {
   const [expanded, setExpanded] = useState(false);
   const [hintUnlocked, setHintUnlocked] = useState(false);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [hintError, setHintError] = useState<string | null>(null);
 
   const initialTier = !failedAttempts || failedAttempts <= 2 ? 1 : failedAttempts <= 4 ? 2 : 3;
   const [hints, setHints] = useState<Array<{ tier: number; tier_name: string; hint_text: string }>>(
@@ -46,17 +50,29 @@ export default function ClassifiedError({
   );
   const [unlockedTiers, setUnlockedTiers] = useState<Set<number>>(new Set(contextualHint ? [initialTier] : []));
 
-  async function handleUnlockNext(tier: number) {
+  async function handleUnlockNext() {
+    if (hintLoading) return;
+    const highestUnlocked = unlockedTiers.size > 0 ? Math.max(...Array.from(unlockedTiers)) : 0;
+    const requestTier = Math.min(highestUnlocked + 1, 3);
+    setHintLoading(true);
+    setHintError(null);
     try {
-      const data = await postHint(submissionId, tier, sessionId, authToken);
+      const data = await postHint(submissionId, requestTier, sessionId, authToken);
       setHints(prev => {
-        if (prev.some(h => h.tier === tier)) return prev;
+        if (prev.some(h => h.tier === data.tier)) return prev;
         return [...prev, { tier: data.tier, tier_name: data.tier_name, hint_text: data.hint_text }]
           .sort((a, b) => a.tier - b.tier);
       });
-      setUnlockedTiers(prev => new Set([...prev, tier]));
-    } catch {
-      // silently ignore — hint unavailable
+      setUnlockedTiers(prev => new Set([...prev, data.tier]));
+    } catch (e: unknown) {
+      const err = e as { status?: number; message?: string };
+      if (err.status === 401 || err.status === 403) {
+        onSessionExpired?.();
+        return;
+      }
+      setHintError(err.message ?? "Failed to load hint. Please try again.");
+    } finally {
+      setHintLoading(false);
     }
   }
 
@@ -79,6 +95,7 @@ export default function ClassifiedError({
         <ReflectionGate
           submissionId={submissionId}
           sessionId={sessionId}
+          authToken={authToken}
           question={reflectionQuestion}
           onUnlocked={() => setHintUnlocked(true)}
         />
@@ -101,11 +118,24 @@ export default function ClassifiedError({
       )}
 
       {(hintUnlocked || !reflectionQuestion) && hints.length > 0 && (
-        <HintTiers
+      <HintTiers
           hints={hints}
           unlockedTiers={unlockedTiers}
           onUnlockNext={handleUnlockNext}
+          unlockDisabled={hintLoading}
         />
+      )}
+
+      {hintError && (
+        <div style={{ color: "#f38ba8", fontSize: 12, marginBottom: 8, display: "flex", alignItems: "center", gap: 10 }}>
+          <span>{hintError}</span>
+          <button
+            onClick={handleUnlockNext}
+            style={{ background: "none", border: "1px solid #f38ba8", color: "#f38ba8", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}
+          >
+            Retry
+          </button>
+        </div>
       )}
 
       {(hintUnlocked || !reflectionQuestion) && (

@@ -118,6 +118,7 @@ class HintEvent(Base):
     submission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("code_submissions.id", ondelete="CASCADE"), nullable=False)
     session_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     hint_text: Mapped[str] = mapped_column(Text, nullable=False)
+    tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     affected_line: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -145,7 +146,7 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
-    username: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     hashed_password: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     provider: Mapped[str] = mapped_column(String(20), nullable=False, server_default="email")
     provider_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

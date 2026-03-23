@@ -9,7 +9,13 @@ class ExecuteRequest(BaseModel):
     language: str
     session_id: UUID
     prediction: Optional[str] = Field(None, max_length=1000)
-    
+
+    @validator("code")
+    def code_not_whitespace_only(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Code must not be empty or whitespace only")
+        return v
+
     @validator("language")
     def validate_language(cls, v: str) -> str:
         if v != "python":
@@ -55,3 +61,7 @@ class ExecuteResponse(BaseModel):
     data: Optional[ExecuteData] = None
     message: str
     code: Optional[str] = None
+    # UNCHANGED_CODE is returned when the submitted code is identical to the
+    # most recent submission for this session. The client must show a correction
+    # prompt; no execution is performed and no submission row is written.
+    # code == "UNCHANGED_CODE" when status == "unchanged".

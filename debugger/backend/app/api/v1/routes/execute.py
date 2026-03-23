@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
@@ -13,10 +14,17 @@ from app.execution.service import execute_code
 from app.cognitive.engine import classify, get_reflection_question, generate_contextual_hint
 from app.intelligence.prediction import compare_predictions, compute_accuracy
 from app.api.v1.deps.auth_guard import get_current_user_id, require_session_owner
+from app.core.config import settings
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 logger = logging.getLogger(__name__)
+
+# Bounded thread pool — prevents sandbox calls from exhausting the default pool
+# under concurrent load. Size matches the per-process sandbox concurrency budget.
+_SANDBOX_EXECUTOR = ThreadPoolExecutor(max_workers=10, thread_name_prefix="sandbox")
+# Total timeout budget: sandbox limit + 2 s for Docker overhead
+_EXECUTOR_TIMEOUT = settings.SANDBOX_TIMEOUT_SECONDS + 2
 
 
 @router.post("/execute", response_model=ExecuteResponse)
@@ -32,6 +40,27 @@ async def execute_handler(
     prediction_match: Optional[bool] = None
     metacognitive_accuracy: Optional[float] = None
     failed_attempts: Optional[int] = None
+
+    # ------------------------------------------------------------------
+    # Comment 3: Server-side unchanged-code gate (FR14)
+    # Compare incoming code against the most recent submission for this
+    # session. Reject without executing if identical — direct API callers
+    # cannot bypass the correction requirement by skipping the frontend.
+    # ------------------------------------------------------------------
+    latest_stmt = (
+        select(CodeSubmission.code_text)
+        .where(CodeSubmission.session_id == request_body.session_id)
+        .order_by(desc(CodeSubmission.timestamp))
+        .limit(1)
+    )
+    latest_result = await db.execute(latest_stmt)
+    latest_code = latest_result.scalar_one_or_none()
+    if latest_code is not None and latest_code == request_body.code:
+        return ExecuteResponse(
+            status="unchanged",
+            message="Code is identical to your last submission. Modify it before re-running.",
+            code="UNCHANGED_CODE",
+        )
     
     # Write CodeSubmission
     try:
@@ -54,7 +83,18 @@ async def execute_handler(
     
     # Run code in executor
     loop = asyncio.get_running_loop()
-    exec_result = await loop.run_in_executor(None, execute_code, request_body.code)
+    try:
+        exec_result = await asyncio.wait_for(
+            loop.run_in_executor(_SANDBOX_EXECUTOR, execute_code, request_body.code),
+            timeout=_EXECUTOR_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.error("Sandbox executor timed out after %ss", _EXECUTOR_TIMEOUT)
+        return ExecuteResponse(
+            status="error",
+            message="Execution timeout",
+            code="EXEC_TIMEOUT",
+        )
     
     # Write ExecutionResult
     execution_result_id = None
@@ -225,6 +265,7 @@ async def execute_handler(
                         session_id=request_body.session_id,
                         hint_text=hint_result.hint_text,
                         affected_line=hint_result.affected_line,
+                        tier=initial_tier,
                     ))
                     await db.commit()
                 except Exception as e:

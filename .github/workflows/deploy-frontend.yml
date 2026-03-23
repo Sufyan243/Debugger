@@ -25,8 +25,9 @@ jobs:
 
       - name: Validate env
         run: |
-          if [ -z "$VITE_API_BASE_URL" ]; then
-            echo "ERROR: VITE_API_BASE_URL secret is not set" && exit 1
+          if [ -z "$VITE_API_BASE_URL" ] || [[ "$VITE_API_BASE_URL" =~ REPLACE_WITH_BACKEND_URL ]]; then
+            echo "ERROR: VITE_API_BASE_URL is missing or still a placeholder. Aborting."
+            exit 1
           fi
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}

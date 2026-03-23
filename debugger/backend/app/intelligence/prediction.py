@@ -18,8 +18,10 @@ def compare_predictions(prediction: str, actual_output: str) -> bool:
         True if normalized strings match, False otherwise
     """
     def normalize(s: str) -> str:
-        return re.sub(r'\s+', ' ', s).strip().lower()
-    
+        # Preserve case — Python is case-sensitive and students must learn that.
+        # Only collapse internal whitespace runs and strip edges.
+        return re.sub(r'\s+', ' ', s).strip()
+
     return normalize(prediction) == normalize(actual_output)
 
 

@@ -16,11 +16,65 @@ services:
       interval: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    # Require password auth — set REDIS_PASSWORD in .env.
+    command: >
+      sh -c "redis-server --requirepass $${REDIS_PASSWORD}"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      retries: 10
+
+  # Isolated sandbox daemon — rootless DinD, TLS-only, private internal network.
+  # Runs dockerd as a non-root user (user-namespace remapping) so privileged: true
+  # is not required. seccomp=unconfined is the minimal relaxation needed for
+  # user-namespace clone(2) calls; no other privilege elevation is granted.
+  # Backend connects via SANDBOX_DOCKER_URL=tcp://docker-sandbox:2376 with mutual TLS.
+  # The host Docker socket is NOT mounted into the backend container.
+  docker-sandbox:
+    image: docker:24-dind-rootless
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=unconfined
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - sandbox-certs-ca:/certs/ca
+      - sandbox-certs-client:/certs/client
+    networks:
+      - sandbox-net
+    healthcheck:
+      test: ["CMD", "docker", "--tlsverify",
+             "--tlscacert=/certs/ca/ca.pem",
+             "--tlscert=/certs/client/cert.pem",
+             "--tlskey=/certs/client/key.pem",
+             "-H", "tcp://localhost:2376", "info"]
+      interval: 10s
+      retries: 10
+
   sandbox-puller:
     image: docker:cli
-    command: docker pull python:3.11-slim
+    command: >
+      docker --tlsverify
+             --tlscacert=/certs/ca/ca.pem
+             --tlscert=/certs/client/cert.pem
+             --tlskey=/certs/client/key.pem
+             -H tcp://docker-sandbox:2376
+             pull python:3.11-slim
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - sandbox-certs-ca:/certs/ca:ro
+      - sandbox-certs-client:/certs/client:ro
+    networks:
+      - default
+      - sandbox-net
+    depends_on:
+      docker-sandbox:
+        condition: service_healthy
     restart: "no"
 
   backend:
@@ -32,12 +86,30 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       sandbox-puller:
         condition: service_started
     env_file:
       - .env
+    environment:
+      SANDBOX_DOCKER_URL: tcp://docker-sandbox:2376
+      SANDBOX_DOCKER_TLS_CA: /certs/ca/ca.pem
+      SANDBOX_DOCKER_TLS_CERT: /certs/client/cert.pem
+      SANDBOX_DOCKER_TLS_KEY: /certs/client/key.pem
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - sandbox-certs-ca:/certs/ca:ro
+      - sandbox-certs-client:/certs/client:ro
+    networks:
+      - default
+      - sandbox-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\""]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+    # No host socket mount — backend communicates with docker-sandbox over the
+    # private sandbox-net network only.
 
   frontend:
     build:
@@ -46,9 +118,13 @@ services:
     ports:
       - "5173:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
+  # pgadmin is dev-only — never exposed in production.
+  # Start with: docker compose --profile dev up
   pgadmin:
+    profiles: ["dev"]
     image: dpage/pgadmin4
     ports:
       - "5050:80"
@@ -58,5 +134,12 @@ services:
     depends_on:
       - postgres
 
+networks:
+  sandbox-net:
+    driver: bridge
+    internal: true
+
 volumes:
   postgres_data:
+  sandbox-certs-ca:
+  sandbox-certs-client:

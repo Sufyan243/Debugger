@@ -7,7 +7,10 @@ _redis: aioredis.Redis | None = None
 def get_redis() -> aioredis.Redis:
     global _redis
     if _redis is None:
-        _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        kwargs: dict = {"decode_responses": True}
+        if settings.REDIS_PASSWORD:
+            kwargs["password"] = settings.REDIS_PASSWORD
+        _redis = aioredis.from_url(settings.REDIS_URL, **kwargs)
     return _redis
 
 

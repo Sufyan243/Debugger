@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.db.session import get_db
 from app.db.models import MetacognitiveMetric, CodeSubmission, ExecutionResult, ErrorRecord
-from app.intelligence.analytics_service import get_concept_stats, get_weakness_profile, get_session_summary
+from app.intelligence.analytics_service import get_concept_stats, get_weakness_profile, get_session_summary, upsert_session_snapshot
 from app.api.v1.schemas.analytics import (
     ConceptStatItem,
     ConceptStatsResponse,
@@ -49,6 +49,7 @@ async def session_summary_handler(
 ) -> SessionSummaryResponse:
     require_session_owner(session_id, user_id)
     summary = await get_session_summary(session_id, db)
+    await upsert_session_snapshot(session_id, summary, db)
     return SessionSummaryResponse(**summary)
 
 

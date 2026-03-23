@@ -135,20 +135,27 @@ export default function LandingAuthModal({ onClose }: Props) {
     }
     setLoading(true)
     try {
-      const endpoint = isLogin ? "login" : "register"
-      const body: Record<string, string> = { email, password }
-      if (!isLogin && name.trim()) body.username = name.trim()
-      const res = await fetch(`${BACKEND_URL}/api/v1/auth/${endpoint}`, {
+      if (!isLogin) {
+        const body: Record<string, string> = { email, password }
+        if (name.trim()) body.username = name.trim()
+        const res = await fetch(`${BACKEND_URL}/api/v1/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(parseError(data))
+        setMode("pending")
+        return
+      }
+      const res = await fetch(`${BACKEND_URL}/api/v1/auth/login-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ email, password }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(parseError(data))
-      if (!isLogin) { setMode("pending"); return }
-      sessionStorage.setItem("oauth_token", data.access_token)
-      sessionStorage.setItem("oauth_email", data.email ?? email)
-      window.location.href = `${TOOL_URL}`
+      window.location.href = `${TOOL_URL}?code=${encodeURIComponent(data.detail)}`
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Request failed")
     } finally {

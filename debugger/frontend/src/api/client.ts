@@ -1,4 +1,18 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+function validateApiBase(url: string): string {
+  if (!url || url.trim() === "" || /REPLACE_WITH_BACKEND_URL/i.test(url)) {
+    throw new Error(
+      "VITE_API_BASE_URL is missing or set to a placeholder. Check .env.production and CI secrets."
+    );
+  }
+  try {
+    new URL(url);
+  } catch {
+    throw new Error(`VITE_API_BASE_URL is not a valid URL: ${url}`);
+  }
+  return url;
+}
+
+export const API_BASE = validateApiBase(import.meta.env.VITE_API_BASE_URL ?? "");
 
 export interface ExecuteRequest {
   code: string;
@@ -47,30 +61,56 @@ export interface ExecuteResponse {
   code?: string;
 }
 
-export async function postExecute(req: ExecuteRequest, authToken: string): Promise<ExecuteResponse> {
+export interface MeResponse {
+  sub: string;
+  anon: boolean;
+  email: string | null;
+  avatar_url: string | null;
+}
+
+/** Rehydrate session identity from the httpOnly cookie.
+ * Returns the user on success.
+ * Returns null on 401/403 (explicitly unauthenticated).
+ * Throws on 5xx or network errors (transient — caller must not downgrade session). */
+export async function fetchMe(): Promise<MeResponse | null> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/me`, { credentials: "include" });
+  if (res.status === 401 || res.status === 403) return null;
+  if (!res.ok) throw new Error(`fetchMe: transient failure ${res.status}`);
+  return await res.json();
+}
+
+export async function postExecute(req: ExecuteRequest, _authToken: string): Promise<ExecuteResponse> {
   const response = await fetch(`${API_BASE}/api/v1/execute`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${authToken}`,
-    },
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(req),
   });
 
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    // Parse the error body so callers get structured status/detail/code.
+    let detail = `HTTP ${response.status}`;
+    let code: string | undefined;
+    try {
+      const body = await response.json();
+      if (typeof body.detail === "string") detail = body.detail;
+      if (typeof body.code === "string") code = body.code;
+    } catch {}
+    // Attach status and code so useExecute can map them to stable error codes.
+    const err = new Error(detail) as Error & { status: number; code?: string };
+    err.status = response.status;
+    err.code = code;
+    throw err;
   }
 
   return await response.json();
 }
 
-export async function postReflect(submissionId: string, responseText: string, sessionId: string, authToken: string) {
+export async function postReflect(submissionId: string, responseText: string, sessionId: string, _authToken: string) {
   const response = await fetch(`${API_BASE}/api/v1/reflect`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${authToken}`,
-    },
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ submission_id: submissionId, response_text: responseText, session_id: sessionId }),
   });
   if (!response.ok) {
@@ -84,20 +124,34 @@ export async function postReflect(submissionId: string, responseText: string, se
   return await response.json();
 }
 
-export async function postHint(submissionId: string, tier: number, sessionId: string, authToken: string) {
+export async function postHint(submissionId: string, tier: number, sessionId: string, _authToken: string) {
   const response = await fetch(`${API_BASE}/api/v1/hint`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ submission_id: submissionId, tier, session_id: sessionId }),
   });
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    let code: string | undefined;
+    try {
+      const body = await response.json();
+      if (typeof body.detail === "string") detail = body.detail;
+      if (typeof body.code === "string") code = body.code;
+    } catch {}
+    const err = new Error(detail) as Error & { status: number; code?: string };
+    err.status = response.status;
+    err.code = code;
+    throw err;
+  }
   return await response.json();
 }
 
-export async function postSolutionRequest(submissionId: string, sessionId: string, authToken: string) {
+export async function postSolutionRequest(submissionId: string, sessionId: string, _authToken: string) {
   const response = await fetch(`${API_BASE}/api/v1/solution-request`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ submission_id: submissionId, session_id: sessionId }),
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -134,15 +188,12 @@ export interface MetacognitiveResponse {
   correct_predictions: number;
 }
 
-/** Shared fetch utility that injects Authorization: Bearer for all session-scoped requests. */
-function sessionFetch(url: string, ownerToken: string, init: RequestInit = {}): Promise<Response> {
-  if (!ownerToken) return Promise.reject(new Error("No auth token"));
+/** Shared fetch utility for session-scoped GET requests — uses cookie auth. */
+function sessionFetch(url: string, _ownerToken: string, init: RequestInit = {}): Promise<Response> {
   return fetch(url, {
     ...init,
-    headers: {
-      ...(init.headers as Record<string, string> | undefined),
-      "Authorization": `Bearer ${ownerToken}`,
-    },
+    credentials: "include",
+    headers: { ...(init.headers as Record<string, string> | undefined) },
   });
 }
 

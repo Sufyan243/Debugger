@@ -10,7 +10,62 @@ services:
   pgadmin:
     profiles: ["dev-only"]
 
+  redis:
+    image: redis:7-alpine
+    command: >
+      sh -c "redis-server --requirepass $${REDIS_PASSWORD}"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      retries: 10
+
+  # Isolated sandbox daemon — rootless DinD, TLS-only, private internal network.
+  # Runs dockerd as a non-root user (user-namespace remapping) so privileged: true
+  # is not required. seccomp=unconfined is the minimal relaxation needed for
+  # user-namespace clone(2) calls; no other privilege elevation is granted.
+  docker-sandbox:
+    image: docker:24-dind-rootless
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=unconfined
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - sandbox-certs-ca:/certs/ca
+      - sandbox-certs-client:/certs/client
+    restart: always
+    networks:
+      - sandbox-net
+    healthcheck:
+      test: ["CMD", "docker", "--tlsverify",
+             "--tlscacert=/certs/ca/ca.pem",
+             "--tlscert=/certs/client/cert.pem",
+             "--tlskey=/certs/client/key.pem",
+             "-H", "tcp://localhost:2376", "info"]
+      interval: 10s
+      retries: 10
+
   sandbox-puller:
+    image: docker:cli
+    command: >
+      docker --tlsverify
+             --tlscacert=/certs/ca/ca.pem
+             --tlscert=/certs/client/cert.pem
+             --tlskey=/certs/client/key.pem
+             -H tcp://docker-sandbox:2376
+             pull python:3.11-slim
+    volumes:
+      - sandbox-certs-ca:/certs/ca:ro
+      - sandbox-certs-client:/certs/client:ro
+    networks:
+      - default
+      - sandbox-net
+    depends_on:
+      docker-sandbox:
+        condition: service_healthy
     restart: "no"
 
   backend:
@@ -21,6 +76,37 @@ services:
         PRODUCTION: "true"
     restart: always
     depends_on:
-      - sandbox-puller
+      redis:
+        condition: service_healthy
+      docker-sandbox:
+        condition: service_healthy
+      sandbox-puller:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      SANDBOX_DOCKER_URL: tcp://docker-sandbox:2376
+      SANDBOX_DOCKER_TLS_CA: /certs/ca/ca.pem
+      SANDBOX_DOCKER_TLS_CERT: /certs/client/cert.pem
+      SANDBOX_DOCKER_TLS_KEY: /certs/client/key.pem
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - sandbox-certs-ca:/certs/ca:ro
+      - sandbox-certs-client:/certs/client:ro
+    networks:
+      - default
+      - sandbox-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\""]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+    # No /var/run/docker.sock volume — host is fully isolated from the backend.
+
+networks:
+  sandbox-net:
+    driver: bridge
+    internal: true
+
+volumes:
+  sandbox-certs-ca:
+  sandbox-certs-client:

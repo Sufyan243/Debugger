@@ -1,10 +1,11 @@
 import { ExecuteData } from "../../api/client";
+import { ExecuteError } from "../../hooks/useExecute";
 import SkeletonLoader from "./SkeletonLoader";
 import SuccessOutput from "./SuccessOutput";
 import ClassifiedError from "./ClassifiedError";
 import UnclassifiedError from "./UnclassifiedError";
 
-type ExecuteState = "idle" | "executing" | "success" | "classified_error" | "unclassified_error" | "api_error";
+type ExecuteState = "idle" | "executing" | "success" | "classified_error" | "unclassified_error" | "api_error" | "unchanged";
 
 interface OutputPanelProps {
   state: ExecuteState;
@@ -13,9 +14,32 @@ interface OutputPanelProps {
   submissionId: string | null;
   sessionId: string;
   authToken: string;
+  error: ExecuteError | null;
+  onSessionExpired?: () => void;
 }
 
-export default function OutputPanel({ state, result, prediction, submissionId, sessionId, authToken }: OutputPanelProps) {
+const ERROR_MESSAGES: Record<string, { title: string; body: string }> = {
+  EXEC_TIMEOUT: {
+    title: "Execution timed out",
+    body: "Your code took too long to run. Check for infinite loops or long-running operations.",
+  },
+  EXEC_RESOURCE_LIMIT: {
+    title: "Resource limit exceeded",
+    body: "Your code used too much memory or CPU. Try reducing data sizes or optimising loops.",
+  },
+  RATE_LIMITED: {
+    title: "Too many requests",
+    body: "You've sent too many requests. Wait a moment before running again.",
+  },
+  EMPTY_CODE: {
+    title: "Nothing to run",
+    body: "Your code is empty or contains only whitespace. Write some code first.",
+  },
+};
+
+export default function OutputPanel({
+  state, result, prediction, submissionId, sessionId, authToken, error, onSessionExpired,
+}: OutputPanelProps) {
   if (state === "idle") {
     return (
       <p className="text-[#585b70] text-sm text-center mt-16">
@@ -54,6 +78,7 @@ export default function OutputPanel({ state, result, prediction, submissionId, s
         sessionId={sessionId}
         authToken={authToken}
         failedAttempts={result.failed_attempts ?? null}
+        onSessionExpired={onSessionExpired}
       />
     );
   }
@@ -72,9 +97,41 @@ export default function OutputPanel({ state, result, prediction, submissionId, s
   }
 
   if (state === "api_error") {
+    const code = error?.code ?? null;
+
+    // Auth-expired: prompt re-authentication
+    if (code === "AUTH_EXPIRED" || code === "TOKEN_REVOKED") {
+      return (
+        <div style={{ padding: 16 }}>
+          <div style={{ color: "#f38ba8", fontWeight: 600, marginBottom: 8 }}>Session expired</div>
+          <div style={{ color: "#a6adc8", fontSize: 13, marginBottom: 12 }}>
+            Your session has expired. Sign in again to continue.
+          </div>
+          {onSessionExpired && (
+            <button
+              onClick={onSessionExpired}
+              style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            >
+              Sign in
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    const known = code ? ERROR_MESSAGES[code] : null;
+    if (known) {
+      return (
+        <div style={{ padding: 16 }}>
+          <div style={{ color: "#f38ba8", fontWeight: 600, marginBottom: 6 }}>{known.title}</div>
+          <div style={{ color: "#a6adc8", fontSize: 13 }}>{known.body}</div>
+        </div>
+      );
+    }
+
     return (
-      <div style={{ color: "#f38ba8", padding: "16px" }}>
-        An error occurred. Please try again.
+      <div style={{ color: "#f38ba8", padding: 16, fontSize: 13 }}>
+        {error?.message ?? "An error occurred. Please try again."}
       </div>
     );
   }
