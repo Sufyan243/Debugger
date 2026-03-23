@@ -53,20 +53,21 @@ function FieldWrapper({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>;
 }
 
-function Label({ text }: { text: string }) {
-  return <label style={{ color: "#9ca3af", fontSize: 12, fontWeight: 500, letterSpacing: "0.03em" }}>{text}</label>;
+function Label({ text, htmlFor }: { text: string; htmlFor: string }) {
+  return <label htmlFor={htmlFor} style={{ color: "#9ca3af", fontSize: 12, fontWeight: 500, letterSpacing: "0.03em" }}>{text}</label>;
 }
 
 function PasswordField({
-  value, onChange, placeholder, label,
-}: { value: string; onChange: (v: string) => void; placeholder: string; label: string }) {
+  value, onChange, placeholder, label, id,
+}: { value: string; onChange: (v: string) => void; placeholder: string; label: string; id: string }) {
   const [show, setShow] = useState(false);
   const [focused, setFocused] = useState(false);
   return (
     <FieldWrapper>
-      <Label text={label} />
+      <Label text={label} htmlFor={id} />
       <div style={{ position: "relative" }}>
         <input
+          id={id}
           type={show ? "text" : "password"}
           value={value}
           onChange={e => onChange(e.target.value)}
@@ -302,8 +303,9 @@ export default function AuthModal({ onAuth, onClose }: Props) {
 
         <form onSubmit={submitEmail} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <FieldWrapper>
-            <Label text="Email address" />
+            <Label text="Email address" htmlFor="auth-email" />
             <input
+              id="auth-email"
               type="email" value={email} onChange={e => setEmail(e.target.value)}
               placeholder="you@example.com" required
               style={{
@@ -317,7 +319,7 @@ export default function AuthModal({ onAuth, onClose }: Props) {
             />
           </FieldWrapper>
 
-          <PasswordField value={password} onChange={setPassword} placeholder="••••••••" label="Password" />
+          <PasswordField value={password} onChange={setPassword} placeholder="••••••••" label="Password" id="auth-password" />
 
           {tab === "register" && password.length > 0 && (
             <div style={{ marginTop: -6 }}>
@@ -337,7 +339,7 @@ export default function AuthModal({ onAuth, onClose }: Props) {
           )}
 
           {tab === "register" && (
-            <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder="••••••••" label="Confirm password" />
+            <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder="••••••••" label="Confirm password" id="auth-confirm-password" />
           )}
 
           {error && (

@@ -278,6 +278,11 @@ export default function App() {
           handleSessionExpired();
           return;
         }
+        // 400/409 = invalid or already-merged anon_id — stale key, clear it.
+        if (mergeRes.status === 400 || mergeRes.status === 409) {
+          localStorage.removeItem(ANON_KEY);
+          return;
+        }
         // Only clear ANON_KEY after a confirmed successful merge response.
         // On network failure or merge failure the key is kept so the next
         // login attempt can retry the merge.
@@ -335,8 +340,22 @@ export default function App() {
     setCode(v);
   };
 
-  // Suppress render until cookie rehydration completes to avoid flash of anon UI
-  if (!authReady) return null;
+  // Loading skeleton during fetchMe() rehydration — prevents flash of anon UI
+  if (!authReady) {
+    return (
+      <div style={{ background: "#1e1e2e", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+          <div style={{
+            width: 32, height: 32, border: "3px solid #313244",
+            borderTopColor: "#6366f1", borderRadius: "50%",
+            animation: "spin 0.8s linear infinite",
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <span style={{ color: "#585b70", fontSize: 13 }}>Loading…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ background: "#1e1e2e", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
