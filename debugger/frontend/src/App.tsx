@@ -283,14 +283,20 @@ export default function App() {
           localStorage.removeItem(ANON_KEY);
           return;
         }
-        // Only clear ANON_KEY after a confirmed successful merge response.
-        // On network failure or merge failure the key is kept so the next
-        // login attempt can retry the merge.
+        // Parse the body on any 2xx response.
         if (mergeRes.ok) {
           const mergeData = await mergeRes.json().catch(() => ({}));
+          // merged: true              → successful, clear key.
+          // merged: false, code=="merge_failed"   → transient DB failure,
+          //                                          keep key for next login.
+          // merged: false, any other code/absent  → terminal (already_merged,
+          //                                          unknown), clear key.
           if (mergeData.merged === true) {
             localStorage.removeItem(ANON_KEY);
+          } else if (mergeData.merged === false && mergeData.code !== "merge_failed") {
+            localStorage.removeItem(ANON_KEY);
           }
+          // code==="merge_failed" → keep ANON_KEY for retry on next login.
         }
       } catch {
         // Network failure — keep ANON_KEY for retry on next login.

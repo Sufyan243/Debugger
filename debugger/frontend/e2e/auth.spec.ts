@@ -211,6 +211,109 @@ test("transient 503 from /auth/me does not trigger anon bootstrap", async ({ pag
 });
 
 // ---------------------------------------------------------------------------
+// 12. Stale ANON_KEY — merge 200 {merged:false} clears key (regression)
+// ---------------------------------------------------------------------------
+
+test("merge 200 merged:false clears ANON_KEY from localStorage", async ({ page }) => {
+  // Seed a stale anon id in localStorage before the app boots
+  await page.goto(BASE);
+  await page.evaluate(() => localStorage.setItem("debugger_anon_id", "stale-anon-uuid"));
+
+  // Stub /auth/me to return a real user (triggers handleAuth path)
+  await page.route(`${API}/api/v1/auth/me`, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ sub: "user-1", anon: false, email: "u@example.com", avatar_url: null }),
+    });
+  });
+
+  // Stub /auth/merge to return 200 with merged:false (already merged / not found)
+  await page.route(`${API}/api/v1/auth/merge`, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ merged: false, code: "already_merged" }),
+    });
+  });
+
+  // Stub /auth/login so we can trigger handleAuth via the modal
+  await page.route(`${API}/api/v1/auth/login`, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ access_token: "eyJ.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjk5OTk5OTk5OTl9.sig", email: "u@example.com", avatar_url: null }),
+    });
+  });
+
+  await page.reload();
+  await page.waitForTimeout(1000);
+
+  // Open modal and log in to trigger handleAuth + merge
+  await page.getByRole("button", { name: /sign in/i }).first().click();
+  await page.getByRole("button", { name: /continue with email/i }).click();
+  await page.getByPlaceholder("you@example.com").fill("u@example.com");
+  await page.getByPlaceholder("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022").first().fill("Password1!");
+  await page.getByRole("button", { name: /sign in/i }).last().click();
+
+  // Wait for merge to complete
+  await page.waitForTimeout(1000);
+
+  // ANON_KEY must be cleared even though merged was false
+  const anonKey = await page.evaluate(() => localStorage.getItem("debugger_anon_id"));
+  expect(anonKey).toBeNull();
+});
+
+// ---------------------------------------------------------------------------
+// 13. Retryable merge failure — merged:false with retry reason keeps ANON_KEY
+// ---------------------------------------------------------------------------
+
+test("merge 200 merged:false with retry reason keeps ANON_KEY in localStorage", async ({ page }) => {
+  await page.goto(BASE);
+  await page.evaluate(() => localStorage.setItem("debugger_anon_id", "retryable-anon-uuid"));
+
+  await page.route(`${API}/api/v1/auth/me`, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ sub: "user-1", anon: false, email: "u@example.com", avatar_url: null }),
+    });
+  });
+
+  // Backend transient failure: merged:false with retryable code
+  await page.route(`${API}/api/v1/auth/merge`, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ merged: false, code: "merge_failed" }),
+    });
+  });
+
+  await page.route(`${API}/api/v1/auth/login`, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ access_token: "eyJ.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjk5OTk5OTk5OTl9.sig", email: "u@example.com", avatar_url: null }),
+    });
+  });
+
+  await page.reload();
+  await page.waitForTimeout(1000);
+
+  await page.getByRole("button", { name: /sign in/i }).first().click();
+  await page.getByRole("button", { name: /continue with email/i }).click();
+  await page.getByPlaceholder("you@example.com").fill("u@example.com");
+  await page.getByPlaceholder("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022").first().fill("Password1!");
+  await page.getByRole("button", { name: /sign in/i }).last().click();
+
+  await page.waitForTimeout(1000);
+
+  // ANON_KEY must be retained so the next login can retry the merge
+  const anonKey = await page.evaluate(() => localStorage.getItem("debugger_anon_id"));
+  expect(anonKey).toBe("retryable-anon-uuid");
+});
+
+// ---------------------------------------------------------------------------
 // 11. Multi-tab — second tab reuses existing session, no duplicate bootstrap
 // ---------------------------------------------------------------------------
 

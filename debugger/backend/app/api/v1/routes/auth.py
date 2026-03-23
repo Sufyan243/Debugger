@@ -618,7 +618,7 @@ async def merge_anon_session(
 
     anon = await db.get(AnonSession, anon_uuid)
     if not anon or anon.merged_into is not None:
-        return {"merged": False, "reason": "already merged or not found"}
+        return {"merged": False, "code": "already_merged"}
 
     try:
         # Reassign submissions and hint events to the authenticated session.
@@ -663,7 +663,7 @@ async def merge_anon_session(
         await db.commit()
     except Exception:
         await db.rollback()
-        return {"merged": False, "reason": "merge failed, please retry"}
+        return {"merged": False, "code": "merge_failed"}
 
     return {"merged": True}
 
