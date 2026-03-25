@@ -15,6 +15,7 @@ export default function LoginPage({ onAuth }: Props) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setLoading(true);
     try {

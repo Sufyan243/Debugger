@@ -139,6 +139,7 @@ export default function AuthModal({ onAuth, onClose }: Props) {
   const strength = passwordStrength(password);
 
   function switchTab(t: "login" | "register") {
+    if (loading) return;
     setTab(t);
     setError("");
     setPassword("");
@@ -147,6 +148,7 @@ export default function AuthModal({ onAuth, onClose }: Props) {
 
   async function submitEmail(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError("");
     if (tab === "register" && password !== confirmPassword) {
       setError("Passwords do not match.");

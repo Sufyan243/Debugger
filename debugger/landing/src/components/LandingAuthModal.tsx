@@ -48,20 +48,21 @@ function FieldWrapper({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>
 }
 
-function Label({ text }: { text: string }) {
-  return <label style={{ color: "#9ca3af", fontSize: 12, fontWeight: 500, letterSpacing: "0.03em" }}>{text}</label>
+function Label({ text, htmlFor }: { text: string; htmlFor: string }) {
+  return <label htmlFor={htmlFor} style={{ color: "#9ca3af", fontSize: 12, fontWeight: 500, letterSpacing: "0.03em" }}>{text}</label>
 }
 
 function PasswordField({
-  value, onChange, placeholder, label,
-}: { value: string; onChange: (v: string) => void; placeholder: string; label: string }) {
+  value, onChange, placeholder, label, id,
+}: { value: string; onChange: (v: string) => void; placeholder: string; label: string; id: string }) {
   const [show, setShow] = useState(false)
   const [focused, setFocused] = useState(false)
   return (
     <FieldWrapper>
-      <Label text={label} />
+      <Label text={label} htmlFor={id} />
       <div style={{ position: "relative" }}>
         <input
+          id={id}
           type={show ? "text" : "password"}
           value={value}
           onChange={e => onChange(e.target.value)}
@@ -120,6 +121,7 @@ export default function LandingAuthModal({ onClose }: Props) {
   const strength = passwordStrength(password)
 
   function switchTab(login: boolean) {
+    if (loading) return
     setIsLogin(login)
     setError("")
     setPassword("")
@@ -128,6 +130,7 @@ export default function LandingAuthModal({ onClose }: Props) {
 
   async function submitEmail(e: React.FormEvent) {
     e.preventDefault()
+    if (loading) return
     setError("")
     if (!isLogin && password !== confirmPassword) {
       setError("Passwords do not match.")
@@ -170,7 +173,7 @@ export default function LandingAuthModal({ onClose }: Props) {
   }
   const card: React.CSSProperties = {
     background: "#0f1117", border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 20, padding: "40px 36px", width: 420, position: "relative",
+    borderRadius: 20, padding: "40px 36px", width: 420, maxWidth: "calc(100vw - 32px)", position: "relative",
     boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
   }
   const providerBtn: React.CSSProperties = {
@@ -188,7 +191,7 @@ export default function LandingAuthModal({ onClose }: Props) {
     return (
       <div style={overlay} onClick={onClose}>
         <div style={card} onClick={e => e.stopPropagation()}>
-          <button onClick={onClose} style={closeBtn}>✕</button>
+          <button onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
           <div style={{ textAlign: "center", padding: "8px 0" }}>
             <div style={{ fontSize: 44, marginBottom: 16 }}>📬</div>
             <p style={{ color: "#f9fafb", fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Check your inbox</p>
@@ -209,7 +212,7 @@ export default function LandingAuthModal({ onClose }: Props) {
     return (
       <div style={overlay} onClick={onClose}>
         <div style={card} onClick={e => e.stopPropagation()}>
-          <button onClick={onClose} style={closeBtn}>✕</button>
+          <button onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
           <h2 style={{ color: "#f9fafb", fontWeight: 700, fontSize: 22, marginBottom: 6 }}>Get started</h2>
           <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 28 }}>Sign in to save your progress and share your wins.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -245,7 +248,7 @@ export default function LandingAuthModal({ onClose }: Props) {
   return (
     <div style={overlay} onClick={onClose}>
       <div style={card} onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} style={closeBtn}>✕</button>
+        <button onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
 
         <button onClick={() => setMode("options")} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", padding: 0, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
           ← Back
@@ -273,8 +276,9 @@ export default function LandingAuthModal({ onClose }: Props) {
         <form onSubmit={submitEmail} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {!isLogin && (
             <FieldWrapper>
-              <Label text="Full name" />
+              <Label text="Full name" htmlFor="landing-name" />
               <input
+                id="landing-name"
                 type="text" value={name} onChange={e => setName(e.target.value)}
                 placeholder="Jane Smith"
                 style={{
@@ -290,8 +294,9 @@ export default function LandingAuthModal({ onClose }: Props) {
           )}
 
           <FieldWrapper>
-            <Label text="Email address" />
+            <Label text="Email address" htmlFor="landing-email" />
             <input
+              id="landing-email"
               type="email" value={email} onChange={e => setEmail(e.target.value)}
               placeholder="you@example.com" required
               style={{
@@ -305,7 +310,7 @@ export default function LandingAuthModal({ onClose }: Props) {
             />
           </FieldWrapper>
 
-          <PasswordField value={password} onChange={setPassword} placeholder="••••••••" label="Password" />
+          <PasswordField value={password} onChange={setPassword} placeholder="••••••••" label="Password" id="landing-password" />
 
           {!isLogin && password.length > 0 && (
             <div style={{ marginTop: -6 }}>
@@ -325,7 +330,7 @@ export default function LandingAuthModal({ onClose }: Props) {
           )}
 
           {!isLogin && (
-            <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder="••••••••" label="Confirm password" />
+            <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder="••••••••" label="Confirm password" id="landing-confirm-password" />
           )}
 
           {error && (
