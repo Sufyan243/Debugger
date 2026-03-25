@@ -37,10 +37,8 @@ services:
   # Backend connects via SANDBOX_DOCKER_URL=tcp://docker-sandbox:2376 with mutual TLS.
   # The host Docker socket is NOT mounted into the backend container.
   docker-sandbox:
-    image: docker:24-dind-rootless
-    security_opt:
-      - no-new-privileges:true
-      - seccomp=unconfined
+    image: docker:24-dind
+    privileged: true
     environment:
       DOCKER_TLS_CERTDIR: /certs
     volumes:
