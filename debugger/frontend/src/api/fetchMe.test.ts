@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { fetchMe } from "./client";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe("fetchMe", () => {
   it("returns null on 401", async () => {

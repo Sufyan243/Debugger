@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { fetchMe } from "../api/client";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); });
 
 // ---------------------------------------------------------------------------
 // Repeat-action latency — fetchMe called 50 times must complete in < 200 ms
