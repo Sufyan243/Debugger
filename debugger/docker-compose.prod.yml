@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    profiles: ["dev-only"]
+    restart: always
 
   frontend:
     profiles: ["dev-only"]
