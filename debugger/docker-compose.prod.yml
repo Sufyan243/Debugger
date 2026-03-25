@@ -28,6 +28,7 @@ services:
   # user-namespace clone(2) calls; no other privilege elevation is granted.
   docker-sandbox:
     image: docker:24-dind-rootless
+    user: "0"
     security_opt:
       - no-new-privileges:true
       - seccomp=unconfined
