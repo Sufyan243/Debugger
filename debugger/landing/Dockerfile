@@ -6,10 +6,9 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-ARG VITE_API_BASE_URL
-ARG VITE_BASE_PATH=/app
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-RUN npm run build -- --base=$VITE_BASE_PATH
+ARG VITE_TOOL_URL
+ENV VITE_TOOL_URL=$VITE_TOOL_URL
+RUN npm run build
 
 FROM scratch
 COPY --from=builder /app/dist /dist
