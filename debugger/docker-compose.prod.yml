@@ -45,6 +45,7 @@ services:
     privileged: true
     environment:
       DOCKER_TLS_CERTDIR: /certs
+      DOCKER_TLS_SAN: DNS:docker-sandbox,IP:127.0.0.1
     volumes:
       - sandbox-certs-ca:/certs/ca
       - sandbox-certs-client:/certs/client
@@ -53,7 +54,7 @@ services:
       - sandbox-net
     healthcheck:
       test: ["CMD", "docker", "--tlsverify",
-             "--tlscacert=/certs/ca/cert.pem",
+             "--tlscacert=/certs/ca/ca.pem",
              "--tlscert=/certs/client/cert.pem",
              "--tlskey=/certs/client/key.pem",
              "-H", "tcp://localhost:2376", "info"]
@@ -100,7 +101,7 @@ services:
       - .env
     environment:
       SANDBOX_DOCKER_URL: tcp://docker-sandbox:2376
-      SANDBOX_DOCKER_TLS_CA: /certs/ca/cert.pem
+      SANDBOX_DOCKER_TLS_CA: /certs/ca/ca.pem
       SANDBOX_DOCKER_TLS_CERT: /certs/client/cert.pem
       SANDBOX_DOCKER_TLS_KEY: /certs/client/key.pem
     volumes:
