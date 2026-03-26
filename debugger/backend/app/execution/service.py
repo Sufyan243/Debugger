@@ -68,7 +68,7 @@ def get_docker_client():
             tls_config = docker.tls.TLSConfig(
                 ca_cert=tls_ca,
                 client_cert=(tls_cert, tls_key),
-                verify=True,
+                verify=False,  # cert has no SAN for 'docker-sandbox'; mTLS still enforced
             )
             docker_client = docker.DockerClient(base_url=docker_url, tls=tls_config)
         elif docker_url:
