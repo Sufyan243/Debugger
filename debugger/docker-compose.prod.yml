@@ -53,13 +53,10 @@ services:
     networks:
       - sandbox-net
     healthcheck:
-      test: ["CMD", "docker", "--tlsverify",
-             "--tlscacert=/certs/ca/ca.pem",
-             "--tlscert=/certs/client/cert.pem",
-             "--tlskey=/certs/client/key.pem",
-             "-H", "tcp://localhost:2376", "info"]
+      test: ["CMD", "sh", "-c", "docker info --format '{{.ID}}' 2>/dev/null || exit 1"]
       interval: 10s
-      retries: 10
+      retries: 15
+      start_period: 20s
 
   sandbox-puller:
     image: docker:cli
