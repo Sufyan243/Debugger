@@ -3,6 +3,16 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-debugger}
+      POSTGRES_USER: ${POSTGRES_USER:-debugger}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-debugger}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-debugger} -d ${POSTGRES_DB:-debugger}"]
+      interval: 5s
+      retries: 10
     restart: always
 
   frontend:
@@ -78,6 +88,8 @@ services:
         PRODUCTION: "true"
     restart: always
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       docker-sandbox:
@@ -125,6 +137,7 @@ networks:
     internal: true
 
 volumes:
+  postgres_data:
   sandbox-certs-ca:
   sandbox-certs-client:
   frontend-dist:
