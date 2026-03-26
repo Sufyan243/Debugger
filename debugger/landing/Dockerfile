@@ -10,5 +10,6 @@ ARG VITE_TOOL_URL
 ENV VITE_TOOL_URL=$VITE_TOOL_URL
 RUN npm run build
 
-FROM scratch
+FROM busybox:latest
 COPY --from=builder /app/dist /dist
+CMD ["sh", "-c", "cp -r /dist/. /mnt/ && echo done"]

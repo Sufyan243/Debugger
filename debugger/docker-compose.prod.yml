@@ -22,7 +22,7 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     volumes:
-      - frontend-dist:/dist
+      - frontend-dist:/mnt
     restart: "no"
 
   landing:
@@ -32,7 +32,7 @@ services:
       args:
         VITE_TOOL_URL: /app
     volumes:
-      - landing-dist:/dist
+      - landing-dist:/mnt
     restart: "no"
 
   redis:
