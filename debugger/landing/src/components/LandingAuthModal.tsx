@@ -1,7 +1,7 @@
 import { useState } from "react"
 
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
-const TOOL_URL = import.meta.env.VITE_TOOL_URL ?? "http://localhost:5173"
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL ?? ""
+const TOOL_URL = import.meta.env.VITE_TOOL_URL ?? "/app"
 
 function parseError(data: unknown): string {
   if (typeof data === "string") return data

@@ -63,6 +63,7 @@ function getUserId(token: string): string {
 interface OAuthParams {
   code: string;
   verified: string;
+  error: string;
 }
 
 function getOAuthParams(): OAuthParams | null {
@@ -70,8 +71,9 @@ function getOAuthParams(): OAuthParams | null {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
     const verified = params.get("verified") ?? "";
+    const error = params.get("error") ?? "";
     if (!code && !verified) return null;
-    return { code: code ?? "", verified };
+    return { code: code ?? "", verified, error };
   } catch {
     return null;
   }
@@ -88,7 +90,7 @@ function clearAuthStorage() {
 function stripAuthParams() {
   try {
     const url = new URL(window.location.href);
-    ["code", "verified"].forEach(p => url.searchParams.delete(p));
+    ["code", "verified", "error"].forEach(p => url.searchParams.delete(p));
     window.history.replaceState({}, "", url.pathname + url.search);
   } catch {}
 }
@@ -121,7 +123,7 @@ export default function App() {
   const [isAnon, setIsAnon] = useState<boolean>(true);
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [showAuth, setShowAuth] = useState(false);
-  const [verifiedNotice, setVerifiedNotice] = useState<"expired" | "error" | null>(null);
+  const [verifiedNotice, setVerifiedNotice] = useState<"expired" | "error" | "account_conflict" | null>(null);
   const [view, setView] = useState<"editor" | "dashboard">("editor");
   const [code, setCode] = useState("");
   const [predictionEnabled, setPredictionEnabled] = useState(false);
@@ -171,7 +173,7 @@ export default function App() {
     // OAuth redirect takes priority — skip rehydration and handle the code/error
     if (oauth) {
       if (oauth.verified === "expired" || oauth.verified === "error") {
-        setVerifiedNotice(oauth.verified);
+        setVerifiedNotice(oauth.error === "account_conflict" ? "account_conflict" : oauth.verified);
         stripAuthParams();
         setAuthReady(true);
         bootstrapAnon();
@@ -482,6 +484,8 @@ export default function App() {
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: verifiedNotice === "expired" ? "#92400e" : "#7f1d1d", color: "#fef3c7", borderRadius: 8, padding: "12px 20px", fontSize: 14, zIndex: 100, display: "flex", alignItems: "center", gap: 16 }}>
           {verifiedNotice === "expired"
             ? "Verification link has expired. Please sign in and request a new verification email."
+            : verifiedNotice === "account_conflict"
+            ? "An account with this email already exists. Please sign in with your original method (GitHub or Google)."
             : "Invalid verification link. Please sign in and request a new verification email."}
           <button onClick={() => setVerifiedNotice(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
         </div>

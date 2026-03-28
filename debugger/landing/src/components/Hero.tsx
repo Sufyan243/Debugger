@@ -1,11 +1,33 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import LandingAuthModal from "./LandingAuthModal"
 
 const TOOL_URL = import.meta.env.VITE_TOOL_URL ?? "http://localhost:5173"
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL ?? ""
 
 export default function Hero() {
   const [showAuth, setShowAuth] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/v1/auth/me`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(me => { if (me && !me.anon) setIsLoggedIn(true) })
+      .catch(() => {})
+  }, [])
+
+  async function handleLogout() {
+    await fetch(`${BACKEND_URL}/api/v1/auth/logout`, { method: "POST", credentials: "include" }).catch(() => {})
+    setIsLoggedIn(false)
+  }
+
+  function handleSignInClick() {
+    if (isLoggedIn) {
+      window.location.href = TOOL_URL
+    } else {
+      setShowAuth(true)
+    }
+  }
 
   return (
     <section className="min-h-screen flex flex-col">
@@ -13,12 +35,29 @@ export default function Hero() {
         <span className="text-bright font-bold text-lg tracking-tight">Terra Debugger</span>
         <div className="flex items-center gap-8">
           <a href="#how-it-works" className="text-muted hover:text-bright text-sm transition-colors">How it works</a>
-          <button
-            onClick={() => setShowAuth(true)}
-            className="text-sm font-semibold text-accent border border-accent/30 hover:border-accent/60 px-4 py-1.5 rounded-lg transition-all bg-transparent cursor-pointer"
-          >
-            Sign in
-          </button>
+          {isLoggedIn ? (
+            <>
+              <button
+                onClick={() => window.location.href = TOOL_URL}
+                className="text-sm font-semibold text-accent border border-accent/30 hover:border-accent/60 px-4 py-1.5 rounded-lg transition-all bg-transparent cursor-pointer"
+              >
+                Go to App
+              </button>
+              <button
+                onClick={handleLogout}
+                className="text-sm font-semibold text-red-400 border border-red-400/30 hover:border-red-400/60 px-4 py-1.5 rounded-lg transition-all bg-transparent cursor-pointer"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleSignInClick}
+              className="text-sm font-semibold text-accent border border-accent/30 hover:border-accent/60 px-4 py-1.5 rounded-lg transition-all bg-transparent cursor-pointer"
+            >
+              Sign in
+            </button>
+          )}
         </div>
       </nav>
 

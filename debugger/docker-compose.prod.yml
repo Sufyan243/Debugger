@@ -31,6 +31,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_TOOL_URL: /app
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     volumes:
       - landing-dist:/mnt
     restart: "no"
@@ -53,6 +54,7 @@ services:
   docker-sandbox:
     image: docker:24-dind
     privileged: true
+    command: ["dockerd-entrypoint.sh", "--dns=8.8.8.8", "--dns=1.1.1.1"]
     environment:
       DOCKER_TLS_CERTDIR: /certs
       DOCKER_TLS_SAN: DNS:docker-sandbox,IP:127.0.0.1
@@ -61,6 +63,7 @@ services:
       - sandbox-certs-client:/certs/client
     restart: always
     networks:
+      - default
       - sandbox-net
     healthcheck:
       test: ["CMD", "sh", "-c", "docker info --format '{{.ID}}' 2>/dev/null || exit 1"]
@@ -72,7 +75,7 @@ services:
     image: docker:cli
     command: >
       docker --tlsverify
-             --tlscacert=/certs/ca/ca.pem
+             --tlscacert=/certs/ca/cert.pem
              --tlscert=/certs/client/cert.pem
              --tlskey=/certs/client/key.pem
              -H tcp://docker-sandbox:2376
@@ -108,7 +111,7 @@ services:
       - .env
     environment:
       SANDBOX_DOCKER_URL: tcp://docker-sandbox:2376
-      SANDBOX_DOCKER_TLS_CA: /certs/ca/ca.pem
+      SANDBOX_DOCKER_TLS_CA: /certs/ca/cert.pem
       SANDBOX_DOCKER_TLS_CERT: /certs/client/cert.pem
       SANDBOX_DOCKER_TLS_KEY: /certs/client/key.pem
     volumes:

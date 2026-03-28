@@ -410,7 +410,7 @@ async def github_login():
 
 
 @router.get("/auth/github/callback")
-async def github_callback(code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def github_callback(code: str = Query(...), state: str = Query(...), request: Request = None, db: AsyncSession = Depends(get_db)):
     provider = await _consume_oauth_state(state)
     if provider == _OAUTH_STATE_UNAVAILABLE:
         return RedirectResponse(f"{settings.FRONTEND_URL}?verified=error&error=auth_unavailable")
@@ -477,6 +477,11 @@ async def github_callback(code: str = Query(...), state: str = Query(...), db: A
         user = await _get_or_create_oauth_user(db, "github", provider_id, email, username, avatar_url)
     except HTTPException as exc:
         if exc.status_code == 409:
+            # User already has an account with a different provider.
+            # If they have a valid session cookie, just send them to the app.
+            existing = await _get_existing_session_user(request, db)
+            if existing:
+                return RedirectResponse(settings.FRONTEND_URL)
             return RedirectResponse(f"{settings.FRONTEND_URL}?verified=error&error=account_conflict")
         raise
 
@@ -510,7 +515,7 @@ async def google_login():
 
 
 @router.get("/auth/google/callback")
-async def google_callback(code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def google_callback(code: str = Query(...), state: str = Query(...), request: Request = None, db: AsyncSession = Depends(get_db)):
     provider = await _consume_oauth_state(state)
     if provider == _OAUTH_STATE_UNAVAILABLE:
         return RedirectResponse(f"{settings.FRONTEND_URL}?verified=error&error=auth_unavailable")
@@ -565,6 +570,9 @@ async def google_callback(code: str = Query(...), state: str = Query(...), db: A
         user = await _get_or_create_oauth_user(db, "google", provider_id, email, username, avatar_url)
     except HTTPException as exc:
         if exc.status_code == 409:
+            existing = await _get_existing_session_user(request, db)
+            if existing:
+                return RedirectResponse(settings.FRONTEND_URL)
             return RedirectResponse(f"{settings.FRONTEND_URL}?verified=error&error=account_conflict")
         raise
 
@@ -671,6 +679,24 @@ async def merge_anon_session(
 # ---------------------------------------------------------------------------
 # Helper — safe OAuth user upsert (no cross-provider email merge)
 # ---------------------------------------------------------------------------
+
+async def _get_existing_session_user(request: Request, db: AsyncSession) -> Optional[User]:
+    """Return the User if the request carries a valid non-anon session cookie, else None."""
+    try:
+        token = request.cookies.get(_COOKIE_NAME) if request else None
+        if not token:
+            return None
+        payload = decode_token(token)
+        if payload.get("anon"):
+            return None
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        result = await db.execute(select(User).where(User.id == user_id))
+        return result.scalar_one_or_none()
+    except Exception:
+        return None
+
 
 async def _get_or_create_oauth_user(
     db: AsyncSession,
