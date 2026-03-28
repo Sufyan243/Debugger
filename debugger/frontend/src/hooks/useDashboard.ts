@@ -40,7 +40,7 @@ export function useDashboard(sessionId: string, ownerToken: string) {
   };
 
   useEffect(() => {
-    if (ownerToken.length === 0) return;
+    if (!sessionId) return;
     refresh();
   }, [sessionId, ownerToken]);
 

@@ -29,7 +29,7 @@ export default function DashboardPage({ sessionId, ownerToken, tokenReady }: Das
 
   // Auto-load history on mount, consistent with other dashboard sections
   useEffect(() => {
-    if (ownerToken) loadHistory();
+    if (sessionId) loadHistory();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, ownerToken]);
 
