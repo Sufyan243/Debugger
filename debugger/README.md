@@ -207,7 +207,16 @@ Every code submission runs in a fresh Docker container with:
 
 ## Landing Page
 
-A separate Vite + TypeScript marketing site (`landing/`) with components: Hero, Problem, Solution, HowItWorks, WhyItWorks, Gallery, Footer. Has its own `LandingAuthModal` that uses the `login-code` endpoint for cross-origin login handoff to the tool frontend.
+A separate Vite + TypeScript marketing site (`landing/`) with components: Hero, Problem, Solution, HowItWorks, WhyItWorks, Gallery, Footer, Privacy. Has its own `LandingAuthModal` that uses the `login-code` endpoint for cross-origin login handoff to the tool frontend.
+
+Live at: **https://terradebugger.me** (tool at **https://terradebugger.me/app**)
+
+> **Important:** `FRONTEND_URL` in the backend `.env` must be set to `https://terradebugger.me/app` (not the landing root). This is where OAuth callbacks redirect after login. Setting it to the landing root will cause the `?code=` param to land on the wrong page.
+
+> **Rebuild note:** The landing Docker image caches aggressively. Always use `--no-cache` when rebuilding after source changes:
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache landing
+> ```
 
 ---
 
@@ -304,8 +313,9 @@ npm run test:e2e
 3. Configure SMTP credentials for email verification.
 4. Configure `GITHUB_CLIENT_ID/SECRET` and/or `GOOGLE_CLIENT_ID/SECRET` for OAuth.
 5. Set `ALLOWED_ORIGINS` to your frontend domain.
-6. Use `docker-compose.prod.yml` for production overrides.
-7. The sandbox daemon (`docker-sandbox`) must be reachable from the backend over the private `sandbox-net` network with mutual TLS — do not expose it publicly.
+6. Set `FRONTEND_URL` to `https://yourdomain.com/app` — **not** the landing root. OAuth callbacks redirect here.
+7. Use `docker-compose.prod.yml` for production overrides.
+8. The sandbox daemon (`docker-sandbox`) must be reachable from the backend over the private `sandbox-net` network with mutual TLS — do not expose it publicly.
 
 ---
 
