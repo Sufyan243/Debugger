@@ -1,6 +1,6 @@
 import { motion } from "framer-motion"
 
-const TOOL_URL = "http://localhost:5173"
+const TOOL_URL = import.meta.env.VITE_TOOL_URL ?? "/app"
 
 const bullets = [
   { title: "Built for beginners", desc: "No jargon, no assumptions, just clear explanations" },
