@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 import io
-import json
 import os
-import tarfile
 import time
 
 import docker
@@ -119,23 +117,12 @@ def execute_code(code: str) -> ExecutionResult:
     try:
         client = get_docker_client()
 
-        # Build tar archive containing the hardened submission
-        tar_stream = io.BytesIO()
-        with tarfile.open(fileobj=tar_stream, mode='w') as tar:
-            code_bytes = hardened_code.encode('utf-8')
-            tarinfo = tarfile.TarInfo(name='submission.py')
-            tarinfo.size = len(code_bytes)
-            tarinfo.mode = 0o644
-            tar.addfile(tarinfo, io.BytesIO(code_bytes))
-        tar_stream.seek(0)
-
         container = client.containers.create(
             image=settings.SANDBOX_IMAGE,
-            command='python /tmp/submission.py',
+            command=['python', '-c', hardened_code],
             mem_limit=settings.SANDBOX_MEM_LIMIT,
             nano_cpus=settings.SANDBOX_CPU_QUOTA,
             network_disabled=True,
-            tmpfs={'/tmp': 'size=16m'},
             security_opt=_build_security_opts(),
             cap_drop=['ALL'],
             user='nobody',
@@ -143,7 +130,6 @@ def execute_code(code: str) -> ExecutionResult:
         )
 
         try:
-            container.put_archive('/tmp', tar_stream)
             container.start()
 
             # Support both requests (docker-py <6) and httpx (docker-py >=6) backends.
