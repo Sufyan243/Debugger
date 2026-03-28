@@ -87,13 +87,14 @@ def _reset_docker_client():
 def _build_security_opts() -> list[str]:
     """
     Return the security_opt list for the sandbox container.
-    Applies the seccomp profile when SANDBOX_SECCOMP_PROFILE is set and the
-    file exists; otherwise falls back to no-new-privileges only (dev mode).
+    Applies the seccomp profile as inline JSON when SANDBOX_SECCOMP_PROFILE is
+    set and the file exists; otherwise falls back to no-new-privileges only.
     """
     opts = ["no-new-privileges:true"]
     profile_path = settings.SANDBOX_SECCOMP_PROFILE
     if profile_path and os.path.isfile(profile_path):
-        opts.append(f"seccomp={profile_path}")
+        with open(profile_path) as f:
+            opts.append(f"seccomp={f.read()}")
     return opts
 
 
@@ -134,8 +135,7 @@ def execute_code(code: str) -> ExecutionResult:
             mem_limit=settings.SANDBOX_MEM_LIMIT,
             nano_cpus=settings.SANDBOX_CPU_QUOTA,
             network_disabled=True,
-            read_only=True,
-            tmpfs={'/tmp': 'size=16m,noexec'},
+            tmpfs={'/tmp': 'size=16m'},
             security_opt=_build_security_opts(),
             cap_drop=['ALL'],
             user='nobody',
